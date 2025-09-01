@@ -1,0 +1,81 @@
+{
+  "websites": [
+    {
+      "name": "Spotify",
+      "url": "https://www.spotify.com/{country}/premium/",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Peacock",
+      "url": "https://www.peacocktv.com/",
+      "countries":["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Netflix", 
+      "url": "https://www.netflix.com/signup",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Zwift",
+      "url": "https://www.zwift.com/{country}/pricing",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Grammarly",
+      "url": "https://www.grammarly.com/plans",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Disney+",
+      "url": "https://help.disneyplus.com/article/disneyplus-price",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Audible",
+      "url": "https://www.audible.com/ep/memberbenefits",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Adobe",
+      "url": "https://www.adobe.com/products/catalog.html",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Canva",
+      "url": "https://www.canva.com/pricing/",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Notion",
+      "url": "https://www.notion.com/pricing",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Figma",
+      "url": "https://www.figma.com/pricing/",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "YouTube",
+      "url": "https://www.youtube.com/premium",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "ChatGPT_Plus",
+      "url": "https://openai.com/pricing",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Anthropic",
+      "url": " https://www.anthropic.com/pricing",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    }
+  ],
+  "output_dir": "./screenshots",
+  "results_dir": "./results",
+  "priority_countries": {
+    "tier_1": ["us", "uk", "de"],
+    "tier_2": ["fr", "jp", "ca", "au", "br", "in", "mx", "it", "es", "nl"],
+    "tier_3": ["kr", "se", "no", "dk", "at", "ch", "be", "pl"]
+  }
+}

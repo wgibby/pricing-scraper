@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""
+Simple URL test for Figma geo issues
+"""
+import requests
+import time
+
+def test_figma_urls():
+    """Test basic URL access patterns for Figma"""
+    
+    countries = ['fr', 'de', 'it', 'in']
+    base_urls = [
+        "https://www.figma.com/pricing/",
+        "https://figma.com/pricing",
+    ]
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    results = {}
+    
+    for country in countries:
+        print(f"\n=== TESTING {country.upper()} ===")
+        country_results = {}
+        
+        # Test base URLs
+        for url in base_urls:
+            print(f"Testing: {url}")
+            
+            try:
+                # Add country-specific headers
+                country_headers = headers.copy()
+                country_headers['Accept-Language'] = f'{country},en-US;q=0.9,en;q=0.8'
+                
+                response = requests.get(url, headers=country_headers, timeout=10)
+                
+                print(f"  Status: {response.status_code}")
+                print(f"  Final URL: {response.url}")
+                print(f"  Content-Length: {len(response.text)}")
+                
+                # Check for key pricing indicators
+                content = response.text.lower()
+                indicators = {
+                    'has_pricing': 'pricing' in content,
+                    'has_professional': 'professional' in content,
+                    'has_organization': 'organization' in content,
+                    'has_usd': '$' in content,
+                    'has_eur': '€' in content,
+                    'has_monthly': 'month' in content,
+                    'content_length': len(response.text)
+                }
+                
+                print(f"  Indicators: {indicators}")
+                
+                country_results[url] = {
+                    'status_code': response.status_code,
+                    'final_url': response.url,
+                    'content_length': len(response.text),
+                    'indicators': indicators
+                }
+                
+            except Exception as e:
+                print(f"  ❌ Error: {e}")
+                country_results[url] = {'error': str(e)}
+            
+            time.sleep(1)  # Be nice to servers
+        
+        # Test country-specific URLs
+        country_urls = [
+            f"https://www.figma.com/{country}/pricing/",
+            f"https://figma.com/{country}/pricing"
+        ]
+        
+        for url in country_urls:
+            print(f"Testing: {url}")
+            
+            try:
+                country_headers = headers.copy()
+                country_headers['Accept-Language'] = f'{country},en-US;q=0.9,en;q=0.8'
+                
+                response = requests.get(url, headers=country_headers, timeout=10)
+                print(f"  Status: {response.status_code}")
+                print(f"  Final URL: {response.url}")
+                
+                if response.status_code == 404:
+                    print("  → Country-specific URL not found")
+                elif response.status_code in [301, 302]:
+                    print("  → Redirected")
+                
+                country_results[url] = {
+                    'status_code': response.status_code,
+                    'final_url': response.url,
+                    'content_length': len(response.text)
+                }
+                
+            except Exception as e:
+                print(f"  ❌ Error: {e}")
+                country_results[url] = {'error': str(e)}
+            
+            time.sleep(1)
+        
+        results[country] = country_results
+    
+    # Summary
+    print(f"\n{'='*50}")
+    print("SUMMARY")
+    print(f"{'='*50}")
+    
+    for country, country_data in results.items():
+        print(f"\n{country.upper()}:")
+        for url, data in country_data.items():
+            if 'error' in data:
+                print(f"  {url}: ERROR - {data['error']}")
+            else:
+                status = data['status_code']
+                length = data.get('content_length', 0)
+                print(f"  {url}: {status} ({length:,} chars)")
+                
+                if 'indicators' in data:
+                    ind = data['indicators']
+                    currency = "EUR" if ind['has_eur'] else ("USD" if ind['has_usd'] else "None")
+                    print(f"    → Currency: {currency}, Pricing: {ind['has_pricing']}")
+    
+    return results
+
+if __name__ == "__main__":
+    test_figma_urls()
