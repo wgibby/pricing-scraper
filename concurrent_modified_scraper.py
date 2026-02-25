@@ -284,7 +284,7 @@ def process_single_country(website_name: str, website_config: dict, country: str
         elif country.lower() != 'us':
             # Check if this is a site that uses geo-IP detection instead of URL paths
             # Sites like Figma, Netflix, etc. use the same URL but detect location via IP
-            geo_ip_sites = ['figma', 'netflix', 'disney', 'hulu', 'spotify', 'adobe']
+            geo_ip_sites = ['figma', 'netflix', 'disney', 'hulu', 'spotify', 'adobe', 'evernote', 'canva', 'dropbox', 'box']
             website_name_lower = website_name.lower()
             
             uses_geo_ip = any(site in website_name_lower for site in geo_ip_sites)
@@ -325,7 +325,7 @@ def process_single_country(website_name: str, website_config: dict, country: str
                     "--disable-renderer-backgrounding",
                     "--disable-backgrounding-occluded-windows"
                 ])
-                use_firefox = website_name.lower() in ["netflix", "adobe"]
+                use_firefox = website_name.lower() in ["netflix", "adobe", "canva", "box"]
 
                 if use_firefox:
                     thread_safe_print(f"    {website_name} detected - forcing Firefox browser...")
@@ -334,17 +334,24 @@ def process_single_country(website_name: str, website_config: dict, country: str
                         firefox_args = ["--width=1920", "--height=1080", "--new-instance"]
                         if site_handler and hasattr(site_handler, 'get_firefox_args'):
                             firefox_args = site_handler.get_firefox_args()
-                        
+
+                        # Check if site handler wants non-headless mode (for Cloudflare bypass)
+                        use_headless_mode = True
+                        if site_handler and hasattr(site_handler, 'use_headless'):
+                            use_headless_mode = site_handler.use_headless
+                            if not use_headless_mode:
+                                thread_safe_print(f"    Running {website_name} in NON-HEADLESS mode to bypass Cloudflare")
+
                         if proxy_config:
                             browser = p.firefox.launch(
-                                headless=True,
+                                headless=use_headless_mode,
                                 proxy=proxy_config,
                                 args=firefox_args,
                                 timeout=60000
                             )
                         else:
                             browser = p.firefox.launch(
-                                headless=True,
+                                headless=use_headless_mode,
                                 args=firefox_args,
                                 timeout=60000
                             )
@@ -414,7 +421,17 @@ def process_single_country(website_name: str, website_config: dict, country: str
                 if not navigation_success:
                     result["error"] = f"Failed to navigate to {url} for {country}"
                     return result
-                
+
+                # Verify pricing page loaded (for sites with redirect detection like Box)
+                if site_handler and hasattr(site_handler, 'verify_pricing_page_loaded'):
+                    try:
+                        if not site_handler.verify_pricing_page_loaded(page):
+                            result["error"] = f"Pricing page verification failed for {country} - likely redirected"
+                            thread_safe_print(f"    ✗ {result['error']}")
+                            return result
+                    except Exception as e:
+                        thread_safe_print(f"    Warning: Pricing verification error: {e}, continuing anyway...")
+
                 # Enhanced cookie handling
                 if not safe_cookie_handling(page, site_handler):
                     thread_safe_print(f"    Cookie handling had issues for {country.upper()}, continuing...")

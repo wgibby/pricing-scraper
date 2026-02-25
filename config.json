@@ -6,6 +6,23 @@
       "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
     },
     {
+      "name": "DropBox",
+      "url": "https://www.dropbox.com/plans?billing=monthly",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
+      "name": "Box",
+      "url": "https://www.box.com/pricing/individual",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+
+    
+    {
+      "name": "Evernote",
+      "url": "https://evernote.com/compare-plans",
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
+    },
+    {
       "name": "Peacock",
       "url": "https://www.peacocktv.com/",
       "countries":["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"]
