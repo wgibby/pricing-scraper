@@ -390,14 +390,16 @@ Deliverables:
 Success criteria: v2 orchestrator successfully scrapes all 17 sites with zero
 site-specific extraction code. Results match old system.
 
-### Phase 2.5: Cutover
+### Phase 2.5: Cutover ✅ COMPLETE (2026-02-28)
 **Goal:** Make v2 the primary system, archive the old code
 
 Deliverables:
-- [ ] Move old handlers to `archive/site_handlers/`
-- [ ] Move old scraper files to `archive/`
-- [ ] v2 becomes the top-level entry point
-- [ ] Verify everything still works from the new structure
+- [x] Move old handlers to `archive/site_handlers/`
+- [x] Move old scraper files to `archive/scrapers/`
+- [x] Move test/debug scripts to `archive/test_scripts/` and `archive/debug/`
+- [x] v2 becomes the top-level entry point
+- [x] Update CLAUDE.md — v2 is now the only documented system
+- [x] Verify everything still works from the new structure
 
 Success criteria: Clean project structure, old code preserved but out of the way.
 
@@ -1074,6 +1076,59 @@ Still very manageable for a data business.
 - Your Playwright + proxy setup works and is well-understood
 - These tools solve scale/anti-detection problems you don't have at monthly cadence
 - Revisit if you scale past ~5,000 pages/month or anti-detection becomes a major issue
+
+---
+
+## Session Notes
+
+### Phase 2 Session (2026-02-27) — COMPLETE
+
+**Built:** Company registry + orchestrator pipeline (5 new files, ~1700 lines)
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `v2/company_registry.json` | 270 | Static config for all 16 sites |
+| `v2/registry.py` | 155 | Load registry, resolve URLs, proxy selection |
+| `v2/browser.py` | 275 | Browser launch, stealth, cookies, capture |
+| `v2/interactions.py` | 245 | Netflix multi-step (8 langs), Adobe geo-popup |
+| `v2/orchestrator.py` | 310 | Sequential + concurrent pipeline |
+
+**Validation results:**
+- US sequential: 16/16 pass (100%)
+- US+UK+DE concurrent (3 workers): 43/48 pass (90%)
+- 5 failures all transient concurrent browser crashes — succeed sequentially
+- Proxy fix applied: Playwright needs credentials separated from server URL (`_parse_proxy_url`)
+- Tier distribution: 28 T2 (65%), 15 T4 (35%) — higher T4 for proxy countries (expected)
+
+**Bug found & fixed during session:**
+- Playwright proxy format requires `{"server": "http://host:port", "username": "...", "password": "..."}`
+  not `{"server": "http://user:pass@host:port"}` — added `_parse_proxy_url()` in `browser.py`
+
+**Open item for next session:**
+- Concurrent robustness: transient `Target page, context or browser has been closed` errors
+  under 3+ simultaneous browsers on macOS. Options: retry with backoff, lower default workers,
+  or sequential fallback on browser crash. All failures are transient, not systematic.
+
+### Phase 2.5 Session (2026-02-28) — COMPLETE
+
+**Goal:** Archive old code, clean project root, make v2 the sole documented system.
+
+**What was moved to `archive/`:**
+- `archive/scrapers/` — 3 old entry points (concurrent_modified_scraper, modified_scraper, requests_scraper)
+- `archive/site_handlers/` — All 20 handler .py files (base, template, 16 sites + archive_spotify)
+- `archive/test_scripts/` — 8 test/debug scripts + v2/test_extraction.py (Phase 1 harness)
+- `archive/debug/` — 3 debug scripts, 3 images, 1 HTML artifact
+
+**Root cleanup result:** 25+ items → 12 items (v2/, proxy files, config, docs, output dirs)
+
+**CLAUDE.md updated:**
+- Removed old scraper docs (entry points, site handler architecture, handler pattern)
+- v2.orchestrator is now the only documented entry point
+- Removed test_extraction.py from v2 components table
+- Added archive/ section documenting what's preserved
+
+**What stays at root:** `proxy_utils.py`, `enhanced_proxy_utils.py`, `proxy_config.py`
+(still imported by `v2/registry.py` at runtime), `config.json`, requirements files, docs.
 
 ---
 

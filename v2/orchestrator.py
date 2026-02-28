@@ -11,7 +11,7 @@ Usage:
     python -m v2.orchestrator --sites spotify netflix --countries us uk de
     python -m v2.orchestrator --all --countries us
     python -m v2.orchestrator --all --all-countries
-    python -m v2.orchestrator --all --countries us uk de --concurrent --max-workers 3
+    python -m v2.orchestrator --all --countries us uk de --concurrent --max-workers 2
 """
 
 import json
@@ -261,11 +261,19 @@ def _run_sequential(pairs: list[tuple[dict, str]], total: int) -> list[dict]:
 def _run_concurrent(
     pairs: list[tuple[dict, str]], max_workers: int, total: int
 ) -> list[dict]:
-    """Run scrapes concurrently with ThreadPoolExecutor."""
+    """Run scrapes concurrently with ThreadPoolExecutor.
+
+    After the concurrent batch, any failures are retried sequentially
+    (fresh browser, no concurrency pressure) to recover from transient
+    macOS resource-contention crashes.
+    """
     results = []
     completed_count = 0
 
     _log(f"Concurrent mode: {max_workers} workers")
+
+    # Build lookup so we can find site_config for retries
+    pair_lookup = {(site["id"], country): site for site, country in pairs}
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_pair = {
@@ -291,6 +299,41 @@ def _run_concurrent(
                     "confidence": "low",
                     "plan_count": 0,
                 })
+
+    # --- Sequential retry for failures ---
+    failed_indices = [
+        i for i, r in enumerate(results) if r.get("status") == "error"
+    ]
+
+    if failed_indices:
+        _log(f"Retrying {len(failed_indices)} failed pair(s) sequentially...")
+        recovered = 0
+
+        for idx in failed_indices:
+            r = results[idx]
+            site_id = r["site_id"]
+            country = r["country"]
+            site_config = pair_lookup.get((site_id, country))
+
+            if site_config is None:
+                _log(f"Cannot retry {site_id}/{country.upper()} — config not found")
+                continue
+
+            _log(f"Retry: {site_id}/{country.upper()}", site_id, country)
+            retry_result = scrape_one(site_config, country)
+            retry_result["retried"] = True
+
+            if retry_result.get("status") == "success":
+                recovered += 1
+                _log(f"Recovered: {site_id}/{country.upper()}", site_id, country)
+            else:
+                _log(f"Still failed: {site_id}/{country.upper()}", site_id, country)
+
+            results[idx] = retry_result
+
+        _log(
+            f"Retry complete: {recovered}/{len(failed_indices)} recovered"
+        )
 
     return results
 
@@ -367,6 +410,10 @@ def print_summary(results: list[dict]) -> None:
             confidence_counts[c] = confidence_counts.get(c, 0) + 1
 
     print(f"\n  Summary: {success}/{total} succeeded, {errors} errors")
+    retried = [r for r in results if r.get("retried")]
+    if retried:
+        retried_recovered = sum(1 for r in retried if r.get("status") == "success")
+        print(f"  Retries: {len(retried)} attempted, {retried_recovered} recovered")
     if tier_counts:
         tier_str = ", ".join(f"{k}: {v}" for k, v in sorted(tier_counts.items()))
         print(f"  Tiers: {tier_str}")
@@ -408,8 +455,8 @@ def main():
         help="Enable concurrent processing",
     )
     parser.add_argument(
-        "--max-workers", type=int, default=3,
-        help="Max concurrent workers (default: 3)",
+        "--max-workers", type=int, default=2,
+        help="Max concurrent workers (default: 2)",
     )
     parser.add_argument(
         "--no-save", action="store_true",
