@@ -87,65 +87,87 @@ All site handlers inherit from `BaseSiteHandler` and must implement:
 - Concurrent mode uses ThreadPoolExecutor for parallel processing
 - Thread-safe logging implemented for concurrent operations
 
-## V2 Extraction Pipeline (Last Updated: 2026-02-27)
+## V2 Pipeline (Last Updated: 2026-02-27)
 
-### Status: Phase 1 COMPLETE ✅ — Phase 2 not started
+### Status: Phase 1 COMPLETE ✅ — Phase 2 COMPLETE ✅
 
-The `v2/` directory contains a new LLM-powered extraction system that replaces per-site
-handler extraction with a generic tiered cascade. See `REFACTOR_PROPOSAL.md` for full
-architecture and session notes.
+The `v2/` directory contains the new LLM-powered pricing scraper pipeline. It replaces
+per-site handler code with a config-driven orchestrator + generic extraction cascade.
+See `REFACTOR_PROPOSAL.md` for full architecture and session notes.
 
 ### V2 Components (`v2/`)
 
 | File | Purpose |
 |------|---------|
+| `company_registry.json` | Static config for all 16 sites — URLs, browser, geo strategy, interactions |
+| `registry.py` | Load registry, resolve URLs per (site, country), proxy selection |
+| `browser.py` | Browser launch, stealth profiles, cookie consent, page stabilization |
+| `interactions.py` | Site-specific overrides: Netflix multi-step, Adobe geo-popup |
+| `orchestrator.py` | Main entry point — sequential + concurrent scrape pipeline |
 | `models.py` | Pydantic data models (PricingPlan, PricingExtraction) + Claude tool schema |
 | `html_cleaner.py` | 5-pass HTML cleaning — 95-98% size reduction, target <20K chars |
 | `llm_client.py` | Claude tool_use wrapper (Sonnet) — text + vision, .env API key loading |
 | `extractor.py` | Tiered cascade: JSON-LD (stub) → Cleaned HTML → OCR (stub) → Vision |
-| `capture_html.py` | Browser/URL configs for all 16 sites, stealth setup, cookie dismissal |
-| `test_extraction.py` | Comparison harness — old handlers vs v2, with `--v2-only` mode |
+| `capture_html.py` | (Phase 1) Browser/URL configs for offline testing |
+| `test_extraction.py` | (Phase 1) Comparison harness — old handlers vs v2 |
 
-### Running V2
+### Running V2 (Phase 2 Orchestrator)
 
 ```bash
-# Test single site extraction (HTML input)
-./venv/bin/python -m v2.llm_client screenshots/html/grammarly_us.html Grammarly us
+# Scrape specific sites for US
+python -m v2.orchestrator --sites spotify netflix --countries us
 
-# Test extraction cascade (HTML + Vision fallback)
-./venv/bin/python -m v2.extractor screenshots/html/grammarly_us.html Grammarly us
+# Scrape all 16 sites for US
+python -m v2.orchestrator --all --countries us
 
-# Run comparison harness (old handlers vs v2)
-./venv/bin/python -m v2.test_extraction --sites grammarly spotify --country us
+# Multi-country
+python -m v2.orchestrator --all --countries us uk de
 
-# Run v2 only (bypasses old handlers — use for sites where old handlers crash)
-./venv/bin/python -m v2.test_extraction --v2-only --sites chatgpt_plus notion --country us
+# All sites, all countries
+python -m v2.orchestrator --all --all-countries
 
-# Run all 16 sites
-./venv/bin/python -m v2.test_extraction --all --country us
+# Concurrent mode (3 workers)
+python -m v2.orchestrator --all --countries us --concurrent --max-workers 3
+
+# Registry info
+python -m v2.registry                              # list all sites
+python -m v2.registry --site netflix --country de   # single site detail
+
+# Browser test (no extraction)
+python -m v2.browser --site spotify --country us
 ```
 
-### Phase 1 Results (16/16 sites passing)
+### Phase 2 Validation Results (16/16 US)
+- 16/16 sites succeeded (100% pass rate)
 - 13 sites resolve at Tier 2 (HTML) — 81%
-- 3 sites resolve at Tier 4 (Vision) — 19%
-- 5 high confidence, 11 medium, 0 low
-- API cost: ~$0.03/page (Sonnet)
+- 3 sites resolve at Tier 4 (Vision) — 19% (Adobe, Figma, Netflix)
+- 5 high confidence, 10 medium, 1 low (Netflix)
+- Concurrent mode validated (ThreadPoolExecutor, per-thread browsers)
+- Results saved to `results/v2/{site}_{country}_{timestamp}.json`
+- Screenshots saved to `screenshots/v2/{site}_{country}_{timestamp}.png`
 
 ### Browser Requirements
 - **Firefox required (8):** Adobe, Box, Canva, ChatGPT+, Disney+, Netflix, Peacock, YouTube
 - **Chromium works (8):** Audible, Dropbox, Evernote, Figma, Grammarly, Notion, Spotify, Zwift
 
 ### Critical Technical Notes
-- **DO NOT use `add_init_script`** in Canva's `prepare_context` — crashes Chromium on macOS
+- **DO NOT use `add_init_script`** for Canva — crashes Chromium on macOS (registry: `skip_init_script: true`)
 - **Anthropic API max image dimension is 8000px** — `llm_client.py` auto-resizes larger screenshots
-- **HTML cleaner target is 20K chars** — reduced from 32K after validation (larger inputs cause incomplete LLM responses)
+- **HTML cleaner target is 20K chars** — reduced from 32K after validation
 - **max_tokens is 4096** — complex pages with many plans need the extra output space
 - **`.env` file** in project root holds `ANTHROPIC_API_KEY` (loaded via stdlib, not python-dotenv)
-- Old handlers are degraded on 13/16 sites — crashes, null prices, regex spam. V2 replaces all extraction.
+- **Box runs non-headless** (`headless: false` in registry) — Cloudflare bypass
+- Old handlers are degraded on 13/16 sites — V2 replaces all extraction
 
-### Next Steps (Phase 2)
-1. **Company registry** (`v2/company_registry.json`) — config-driven site definitions
-2. **Orchestrator** (`v2/orchestrator.py`) — new entry point replacing `concurrent_modified_scraper.py`
-3. **Generic cookie consent + stealth profiles** — consolidate from old handlers
-4. **Thin interaction overrides** — only Netflix (click "Next") and Adobe (dismiss geo-popup)
-5. After Phase 2 validated: archive old handlers to `archive/`
+### Known Issues
+- **Concurrent mode transient failures:** Running 3+ browsers simultaneously causes occasional
+  `Target page, context or browser has been closed` or navigation timeout errors due to macOS
+  resource contention. All failures are transient — the same (site, country) pairs succeed in
+  sequential mode. Multi-country concurrent run scored 43/48 (90%). Potential mitigations:
+  automatic retry with backoff, lower default `--max-workers`, or sequential fallback on failure.
+
+### Next Steps (Phase 2.5+)
+1. **Concurrent robustness** — retry logic / sequential fallback for transient browser crashes
+2. Multi-country validation with proxies (UK, DE) — initial run: 43/48 pass (90%)
+3. Archive old handlers to `archive/`
+4. Phase 3: SQLite storage, historical tracking
