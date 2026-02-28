@@ -87,41 +87,65 @@ All site handlers inherit from `BaseSiteHandler` and must implement:
 - Concurrent mode uses ThreadPoolExecutor for parallel processing
 - Thread-safe logging implemented for concurrent operations
 
-## Recent Work (Last Updated: 2025-10-01)
+## V2 Extraction Pipeline (Last Updated: 2026-02-27)
 
-### Canva Handler - COMPLETED ✅
-**Date**: October 1, 2025
-**Status**: Fully functional and tested
+### Status: Phase 1 COMPLETE ✅ — Phase 2 not started
 
-**Implementation Details**:
-- Created `site_handlers/canva.py` with full pricing extraction
-- Uses **Firefox** instead of Chromium (Canva has strong bot detection that blocks/crashes Chromium)
-- Added to `geo_ip_sites` list in `concurrent_modified_scraper.py` (line 287)
-- Added to Firefox browser list (line 328)
-- Successfully extracts all 4 plans: Free ($0), Pro ($15/mo), Teams ($10/mo), Enterprise (contact)
-- Monthly/yearly toggle support with multiple fallback strategies
+The `v2/` directory contains a new LLM-powered extraction system that replaces per-site
+handler extraction with a generic tiered cascade. See `REFACTOR_PROPOSAL.md` for full
+architecture and session notes.
 
-**Critical Technical Notes**:
-- **DO NOT use `add_init_script`** in Canva's `prepare_context` - it causes Chromium crashes on macOS
-- **DO NOT use extensive browser args** - keep minimal (`--disable-blink-features`, `--disable-dev-shm-usage`, `--no-sandbox`)
-- Firefox is essential - Chromium gets blocked by Canva's protection (likely Cloudflare)
-- Test script available: `canva_test_script.py`
+### V2 Components (`v2/`)
 
-**Extraction Strategy**:
-- Searches for exact plan names ("Canva Free", "Canva Pro", etc.)
-- Traverses DOM upward to find pricing card container
-- Handles "US$" format and "Contact for pricing" for Enterprise
-- Features extraction implemented (though currently returns empty - may need refinement)
+| File | Purpose |
+|------|---------|
+| `models.py` | Pydantic data models (PricingPlan, PricingExtraction) + Claude tool schema |
+| `html_cleaner.py` | 5-pass HTML cleaning — 95-98% size reduction, target <20K chars |
+| `llm_client.py` | Claude tool_use wrapper (Sonnet) — text + vision, .env API key loading |
+| `extractor.py` | Tiered cascade: JSON-LD (stub) → Cleaned HTML → OCR (stub) → Vision |
+| `capture_html.py` | Browser/URL configs for all 16 sites, stealth setup, cookie dismissal |
+| `test_extraction.py` | Comparison harness — old handlers vs v2, with `--v2-only` mode |
 
-### Next Steps (TODO)
-1. **Feature extraction refinement** - Canva features array is empty, may need to adjust selector or container traversal
-2. **Test with other countries** - Verify geo-targeting works correctly (Canva uses same URL globally)
-3. **Add more sites** - Continue expanding coverage
-4. **Optimize concurrent scraping** - Test with multiple sites/countries in parallel
+### Running V2
 
-### Handler Best Practices (Learned from Canva)
-1. **For high-detection sites**: Use Firefox over Chromium
-2. **Avoid init scripts on macOS**: They can cause crashes with certain browser configurations
-3. **Keep browser args minimal**: Only add what's necessary for stealth
-4. **Test in isolation first**: Use dedicated test scripts before full integration
-5. **DOM traversal approach**: When selectors fail, search for text and traverse up to find containers
+```bash
+# Test single site extraction (HTML input)
+./venv/bin/python -m v2.llm_client screenshots/html/grammarly_us.html Grammarly us
+
+# Test extraction cascade (HTML + Vision fallback)
+./venv/bin/python -m v2.extractor screenshots/html/grammarly_us.html Grammarly us
+
+# Run comparison harness (old handlers vs v2)
+./venv/bin/python -m v2.test_extraction --sites grammarly spotify --country us
+
+# Run v2 only (bypasses old handlers — use for sites where old handlers crash)
+./venv/bin/python -m v2.test_extraction --v2-only --sites chatgpt_plus notion --country us
+
+# Run all 16 sites
+./venv/bin/python -m v2.test_extraction --all --country us
+```
+
+### Phase 1 Results (16/16 sites passing)
+- 13 sites resolve at Tier 2 (HTML) — 81%
+- 3 sites resolve at Tier 4 (Vision) — 19%
+- 5 high confidence, 11 medium, 0 low
+- API cost: ~$0.03/page (Sonnet)
+
+### Browser Requirements
+- **Firefox required (8):** Adobe, Box, Canva, ChatGPT+, Disney+, Netflix, Peacock, YouTube
+- **Chromium works (8):** Audible, Dropbox, Evernote, Figma, Grammarly, Notion, Spotify, Zwift
+
+### Critical Technical Notes
+- **DO NOT use `add_init_script`** in Canva's `prepare_context` — crashes Chromium on macOS
+- **Anthropic API max image dimension is 8000px** — `llm_client.py` auto-resizes larger screenshots
+- **HTML cleaner target is 20K chars** — reduced from 32K after validation (larger inputs cause incomplete LLM responses)
+- **max_tokens is 4096** — complex pages with many plans need the extra output space
+- **`.env` file** in project root holds `ANTHROPIC_API_KEY` (loaded via stdlib, not python-dotenv)
+- Old handlers are degraded on 13/16 sites — crashes, null prices, regex spam. V2 replaces all extraction.
+
+### Next Steps (Phase 2)
+1. **Company registry** (`v2/company_registry.json`) — config-driven site definitions
+2. **Orchestrator** (`v2/orchestrator.py`) — new entry point replacing `concurrent_modified_scraper.py`
+3. **Generic cookie consent + stealth profiles** — consolidate from old handlers
+4. **Thin interaction overrides** — only Netflix (click "Next") and Adobe (dismiss geo-popup)
+5. After Phase 2 validated: archive old handlers to `archive/`
