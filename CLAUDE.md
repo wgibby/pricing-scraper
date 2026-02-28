@@ -42,8 +42,8 @@ python -m v2.orchestrator --all --countries us uk de
 # All sites, all countries
 python -m v2.orchestrator --all --all-countries
 
-# Concurrent mode (3 workers)
-python -m v2.orchestrator --all --countries us --concurrent --max-workers 3
+# Concurrent mode (default 2 workers, with automatic retry)
+python -m v2.orchestrator --all --countries us --concurrent
 
 # Registry info
 python -m v2.registry                              # list all sites
@@ -117,12 +117,10 @@ python -m v2.browser --site spotify --country us
 - **`.env` file** in project root holds `ANTHROPIC_API_KEY` (loaded via stdlib, not python-dotenv)
 - **Box runs non-headless** (`headless: false` in registry) — Cloudflare bypass
 
-### Known Issues
-- **Concurrent mode transient failures:** Running 3+ browsers simultaneously causes occasional
-  `Target page, context or browser has been closed` or navigation timeout errors due to macOS
-  resource contention. All failures are transient — the same (site, country) pairs succeed in
-  sequential mode. Multi-country concurrent run scored 43/48 (90%). Potential mitigations:
-  automatic retry with backoff, lower default `--max-workers`, or sequential fallback on failure.
+### Concurrent Mode
+- Default `--max-workers` is 2 (reduced from 3 to avoid macOS resource contention)
+- Failed pairs are automatically retried sequentially after the concurrent batch completes
+- Recovery stats are reported in the summary table
 
 ### Archived Code (`archive/`)
 
@@ -133,6 +131,5 @@ The original per-site handler scraper is preserved in `archive/` for reference:
 - `archive/debug/` — Debug scripts, test screenshots, HTML artifacts
 
 ### Next Steps (Phase 3+)
-1. **Concurrent robustness** — retry logic / sequential fallback for transient browser crashes
-2. Multi-country validation with proxies (UK, DE) — initial run: 43/48 pass (90%)
-3. Phase 3: SQLite storage, historical tracking
+1. Multi-country validation with proxies (UK, DE) — initial run: 43/48 pass (90%), needs re-run with retry logic
+2. Phase 3: SQLite storage, historical tracking

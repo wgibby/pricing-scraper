@@ -1104,10 +1104,10 @@ Still very manageable for a data business.
 - Playwright proxy format requires `{"server": "http://host:port", "username": "...", "password": "..."}`
   not `{"server": "http://user:pass@host:port"}` — added `_parse_proxy_url()` in `browser.py`
 
-**Open item for next session:**
-- Concurrent robustness: transient `Target page, context or browser has been closed` errors
-  under 3+ simultaneous browsers on macOS. Options: retry with backoff, lower default workers,
-  or sequential fallback on browser crash. All failures are transient, not systematic.
+**Concurrent robustness (resolved in later session):**
+- Default `--max-workers` reduced to 2
+- `_run_concurrent()` now retries all failed pairs sequentially after the concurrent batch
+- Needs multi-country re-run to validate improvement over the initial 43/48 (90%)
 
 ### Phase 2.5 Session (2026-02-28) — COMPLETE
 
