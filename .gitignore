@@ -35,9 +35,10 @@ ENV/
 .env.test
 .env.production
 
-# Screenshots and Results (data files)
+# Screenshots, Results, and Database (data files)
 screenshots/
 results/
+data/
 *.png
 *.jpg
 *.jpeg

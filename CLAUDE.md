@@ -30,7 +30,7 @@ Key dependencies:
 ## Running the Scraper
 
 ```bash
-# Scrape specific sites for US
+# Scrape specific sites for US (includes SQLite storage + change detection)
 python -m v2.orchestrator --sites spotify netflix --countries us
 
 # Scrape all 16 sites for US
@@ -45,12 +45,29 @@ python -m v2.orchestrator --all --all-countries
 # Concurrent mode (default 2 workers, with automatic retry)
 python -m v2.orchestrator --all --countries us --concurrent
 
+# Skip database (JSON only, same as pre-Phase 3)
+python -m v2.orchestrator --all --countries us --no-db
+
 # Registry info
 python -m v2.registry                              # list all sites
 python -m v2.registry --site netflix --country de   # single site detail
 
 # Browser test (no extraction)
 python -m v2.browser --site spotify --country us
+
+# Database info
+python -m v2.db --info
+
+# Export for website
+python -m v2.export --output /path/to/pricing_data_formatted.json
+python -m v2.export --dry-run
+
+# View price changes
+python -m v2.diff --last          # most recent run
+python -m v2.diff --run-id 5      # specific run
+
+# One-time import of existing results
+python -m v2.import_history
 ```
 
 ## Architecture
@@ -63,7 +80,8 @@ python -m v2.browser --site spotify --country us
 4. Site-specific interactions executed (Netflix signup flow, Adobe geo-popup, etc.)
 5. Tiered extraction cascade: Cleaned HTML (Tier 2) → Vision/OCR (Tier 4)
 6. Structured pricing data returned as Pydantic models, saved as JSON
-7. Screenshots captured for verification
+7. Results stored in SQLite (`data/pricing.db`) with automatic change detection
+8. Screenshots captured for verification
 
 ### Proxy Management
 
@@ -74,12 +92,13 @@ python -m v2.browser --site spotify --country us
 
 ## Output Structure
 
-- `results/v2/{site}_{country}_{timestamp}.json` - Structured pricing data
+- `data/pricing.db` - SQLite database (runs, results, plans, price_changes)
+- `results/v2/{site}_{country}_{timestamp}.json` - Structured pricing data (kept for debugging)
 - `screenshots/v2/{site}_{country}_{timestamp}.png` - Browser screenshots
 
-## V2 Pipeline (Last Updated: 2026-02-28)
+## V2 Pipeline (Last Updated: 2026-03-01)
 
-### Status: Phase 1 COMPLETE ✅ — Phase 2 COMPLETE ✅ — Phase 2.5 COMPLETE ✅
+### Status: Phase 1 ✅ — Phase 2 ✅ — Phase 2.5 ✅ — Phase 3 COMPLETE ✅
 
 ### V2 Components (`v2/`)
 
@@ -89,12 +108,17 @@ python -m v2.browser --site spotify --country us
 | `registry.py` | Load registry, resolve URLs per (site, country), proxy selection |
 | `browser.py` | Browser launch, stealth profiles, cookie consent, page stabilization |
 | `interactions.py` | Site-specific overrides: Netflix multi-step, Adobe geo-popup |
-| `orchestrator.py` | Main entry point — sequential + concurrent scrape pipeline |
+| `orchestrator.py` | Main entry point — sequential + concurrent scrape pipeline + SQLite storage |
 | `models.py` | Pydantic data models (PricingPlan, PricingExtraction) + Claude tool schema |
 | `html_cleaner.py` | 5-pass HTML cleaning — 95-98% size reduction, target <20K chars |
 | `llm_client.py` | Claude tool_use wrapper (Sonnet) — text + vision, .env API key loading |
 | `extractor.py` | Tiered cascade: JSON-LD (stub) → Cleaned HTML → OCR (stub) → Vision |
 | `capture_html.py` | Browser/URL configs for offline HTML capture (dev tool) |
+| `db.py` | SQLite schema, connection management, `--info` CLI |
+| `store.py` | Write orchestrator results to SQLite (runs/results/plans) |
+| `diff.py` | Detect price changes between runs, `--last` / `--run-id` CLI |
+| `export.py` | Export latest prices as website-compatible JSON, `--output` / `--dry-run` |
+| `import_history.py` | One-time import of existing `results/v2/*.json` files into SQLite |
 
 ### Phase 2 Validation Results (16/16 US)
 - 16/16 sites succeeded (100% pass rate)
@@ -130,6 +154,14 @@ The original per-site handler scraper is preserved in `archive/` for reference:
 - `archive/test_scripts/` — Test/debug scripts and Phase 1 comparison harness
 - `archive/debug/` — Debug scripts, test screenshots, HTML artifacts
 
-### Next Steps (Phase 3+)
+### Phase 3: SQLite Storage + Change Detection + Website Export
+- Database: `data/pricing.db` (SQLite, WAL mode)
+- Tables: `runs`, `results`, `plans`, `price_changes` + `latest_results` view
+- Orchestrator auto-stores results and runs change detection after each scrape
+- Use `--no-db` flag to skip SQLite (JSON-only mode, same as pre-Phase 3)
+- `v2/export.py` transforms v2 data into website format (1-2 entries per plan per billing period)
+- Historical import: `python -m v2.import_history` backfills existing JSON files
+
+### Next Steps (Phase 4+)
 1. Multi-country validation with proxies (UK, DE) — initial run: 43/48 pass (90%), needs re-run with retry logic
-2. Phase 3: SQLite storage, historical tracking
+2. Automated export + push to stratdesk-web repo

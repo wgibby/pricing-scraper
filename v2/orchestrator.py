@@ -462,6 +462,10 @@ def main():
         "--no-save", action="store_true",
         help="Don't save results to disk",
     )
+    parser.add_argument(
+        "--no-db", action="store_true",
+        help="Skip SQLite storage and change detection (JSON only)",
+    )
     args = parser.parse_args()
 
     # Resolve sites
@@ -499,9 +503,28 @@ def main():
     )
 
     # Save
+    saved_paths = []
     if not args.no_save:
         saved_paths = save_results(results)
         _log(f"Results saved: {len(saved_paths)} files to results/v2/")
+
+    # Store to SQLite + detect changes
+    if not args.no_db:
+        try:
+            from v2.store import store_run
+            from v2.diff import detect_changes, print_change_report
+
+            mode = "concurrent" if args.concurrent else "sequential"
+            total_time = sum(r.get("elapsed_seconds", 0) for r in results)
+            run_id = store_run(
+                results, saved_paths, countries, mode=mode, elapsed_sec=total_time,
+            )
+            _log(f"Stored in SQLite: run #{run_id}")
+
+            changes = detect_changes(run_id)
+            print_change_report(changes, run_id)
+        except Exception as e:
+            _log(f"SQLite storage/diff error (non-fatal): {e}")
 
     # Summary
     print_summary(results)
