@@ -52,30 +52,64 @@ def _log(msg: str, site_id: str = "", country: str = "") -> None:
 
 
 # ---------------------------------------------------------------------------
+# Retryable vs. structural error classification
+# ---------------------------------------------------------------------------
+
+# Transient failures — browser crashes, proxy hiccups, timeouts
+RETRYABLE_PATTERNS = [
+    "target page, context or browser has been closed",
+    "browser has been closed",
+    "net::err_tunnel_connection_failed",
+    "net::err_connection_reset",
+    "net::err_connection_timed_out",
+    "net::err_proxy_connection_failed",
+    "ns_error_abort",
+    "ns_binding_aborted",
+    "timeout",
+    "connection refused",
+]
+
+# Structural failures — site-level issues that will never succeed on retry
+STRUCTURAL_PATTERNS = [
+    "interrupted by another navigation to",
+]
+
+# Default retry settings
+DEFAULT_MAX_RETRIES = 2
+RETRY_DELAY_SECONDS = 3
+
+
+def _is_retryable_error(error_str: str) -> bool:
+    """Check if an error is transient and worth retrying."""
+    error_lower = error_str.lower()
+    for pattern in STRUCTURAL_PATTERNS:
+        if pattern in error_lower:
+            return False
+    for pattern in RETRYABLE_PATTERNS:
+        if pattern in error_lower:
+            return True
+    # Unknown errors: don't retry
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Single (site, country) scrape pipeline
 # ---------------------------------------------------------------------------
 
-def scrape_one(site_config: dict, country: str) -> dict:
+def scrape_one(
+    site_config: dict, country: str, max_retries: int = DEFAULT_MAX_RETRIES
+) -> dict:
     """
     Run the full pipeline for a single (site, country) pair.
 
-    Steps:
-    1. Resolve URL
-    2. Get proxy (if non-US)
-    3. Launch browser + create context (stealth)
-    4. Pre-navigation setup (cookie injection)
-    5. Navigate (networkidle → domcontentloaded fallback)
-    6. Dismiss cookies
-    7. Run post-navigation interaction (Netflix, Adobe)
-    8. Stabilize page
-    9. Capture HTML + screenshot
-    10. Close browser
-    11. Run v2 extraction cascade
-    12. Return result dict
+    Automatically retries transient failures (browser crashes, proxy hiccups,
+    timeouts) up to max_retries times. Structural failures (e.g. site redirects
+    to a different domain) fail immediately without retry.
 
     Args:
         site_config: Site config dict from the registry.
         country: ISO alpha-2 country code.
+        max_retries: Max retry attempts for transient errors (default 2).
 
     Returns:
         Result dict with extraction data and metadata.
@@ -83,6 +117,7 @@ def scrape_one(site_config: dict, country: str) -> dict:
     site_id = site_config["id"]
     display_name = site_config["display_name"]
     start_time = time.time()
+    attempts = 0
 
     result = {
         "site_id": site_id,
@@ -97,52 +132,82 @@ def scrape_one(site_config: dict, country: str) -> dict:
         "extraction": None,
         "screenshot_path": "",
         "elapsed_seconds": 0,
+        "attempts": 1,
+        "retryable": None,
     }
 
-    try:
-        # 1. Resolve URL
-        url = resolve_url(site_config, country)
-        result["url"] = url
-        _log(f"URL: {url}", site_id, country)
+    while attempts <= max_retries:
+        attempts += 1
+        try:
+            # 1. Resolve URL
+            url = resolve_url(site_config, country)
+            result["url"] = url
+            if attempts == 1:
+                _log(f"URL: {url}", site_id, country)
 
-        # 2. Get proxy
-        proxy_url = get_proxy_config(site_config, country)
-        if proxy_url:
-            _log(f"Using proxy for {country.upper()}", site_id, country)
-        else:
-            _log(f"No proxy (US or unavailable)", site_id, country)
+            # 2. Get proxy
+            proxy_url = get_proxy_config(site_config, country)
+            if attempts == 1:
+                if proxy_url:
+                    _log(f"Using proxy for {country.upper()}", site_id, country)
+                else:
+                    _log(f"No proxy (US or unavailable)", site_id, country)
 
-        # 3-9. Browser lifecycle
-        html, screenshot_path = _browser_phase(site_config, country, url, proxy_url)
-        result["screenshot_path"] = screenshot_path
+            # 3-9. Browser lifecycle
+            html, screenshot_path = _browser_phase(site_config, country, url, proxy_url)
+            result["screenshot_path"] = screenshot_path
 
-        # 10. Already closed in _browser_phase
+            # 10. Extraction
+            _log("Running extraction cascade...", site_id, country)
+            extraction_result: ExtractionResult = extract_with_fallback(
+                html=html,
+                screenshot_path=screenshot_path,
+                company=display_name,
+                country=country,
+            )
 
-        # 11. Extraction
-        _log("Running extraction cascade...", site_id, country)
-        extraction_result: ExtractionResult = extract_with_fallback(
-            html=html,
-            screenshot_path=screenshot_path,
-            company=display_name,
-            country=country,
-        )
+            result["status"] = "success"
+            result["tier"] = extraction_result.tier
+            result["confidence"] = extraction_result.extraction.extraction_confidence.value
+            result["plan_count"] = len(extraction_result.extraction.plans)
+            result["extraction"] = extraction_result.extraction.model_dump()
+            result["attempts"] = attempts
+            result["retryable"] = None
+            result["error"] = None
+            break  # Success — exit retry loop
 
-        result["status"] = "success"
-        result["tier"] = extraction_result.tier
-        result["confidence"] = extraction_result.extraction.extraction_confidence.value
-        result["plan_count"] = len(extraction_result.extraction.plans)
-        result["extraction"] = extraction_result.extraction.model_dump()
+        except Exception as e:
+            error_str = str(e)
+            retryable = _is_retryable_error(error_str)
+            result["error"] = error_str
+            result["retryable"] = retryable
+            result["attempts"] = attempts
 
-    except Exception as e:
-        result["status"] = "error"
-        result["error"] = str(e)
-        _log(f"ERROR: {e}", site_id, country)
+            if retryable and attempts <= max_retries:
+                _log(
+                    f"TRANSIENT ERROR (attempt {attempts}/{max_retries + 1}): "
+                    f"{error_str} — retrying in {RETRY_DELAY_SECONDS}s...",
+                    site_id, country,
+                )
+                time.sleep(RETRY_DELAY_SECONDS)
+                continue
+            elif not retryable:
+                _log(f"STRUCTURAL ERROR: {error_str}", site_id, country)
+                break  # Don't waste time retrying
+            else:
+                _log(
+                    f"TRANSIENT ERROR (attempt {attempts}/{max_retries + 1}): "
+                    f"{error_str} — no retries left",
+                    site_id, country,
+                )
+                break
 
     result["elapsed_seconds"] = round(time.time() - start_time, 1)
+    attempt_info = f" (attempt {attempts})" if attempts > 1 else ""
     _log(
         f"Done: {result['status']} | tier={result['tier']} | "
         f"confidence={result['confidence']} | plans={result['plan_count']} | "
-        f"{result['elapsed_seconds']}s",
+        f"{result['elapsed_seconds']}s{attempt_info}",
         site_id, country,
     )
     return result
@@ -300,13 +365,23 @@ def _run_concurrent(
                     "plan_count": 0,
                 })
 
-    # --- Sequential retry for failures ---
+    # --- Sequential retry for retryable failures ---
+    # Only retry transient errors; structural failures (e.g. site redirects)
+    # already exhausted retries inside scrape_one and won't recover.
     failed_indices = [
-        i for i, r in enumerate(results) if r.get("status") == "error"
+        i for i, r in enumerate(results)
+        if r.get("status") == "error" and r.get("retryable") is not False
     ]
+    structural_count = sum(
+        1 for r in results
+        if r.get("status") == "error" and r.get("retryable") is False
+    )
+
+    if structural_count:
+        _log(f"Skipping {structural_count} structural failure(s) (not retryable)")
 
     if failed_indices:
-        _log(f"Retrying {len(failed_indices)} failed pair(s) sequentially...")
+        _log(f"Retrying {len(failed_indices)} transient failure(s) sequentially...")
         recovered = 0
 
         for idx in failed_indices:
@@ -319,7 +394,7 @@ def _run_concurrent(
                 _log(f"Cannot retry {site_id}/{country.upper()} — config not found")
                 continue
 
-            _log(f"Retry: {site_id}/{country.upper()}", site_id, country)
+            _log(f"Concurrent retry: {site_id}/{country.upper()}", site_id, country)
             retry_result = scrape_one(site_config, country)
             retry_result["retried"] = True
 
@@ -410,10 +485,28 @@ def print_summary(results: list[dict]) -> None:
             confidence_counts[c] = confidence_counts.get(c, 0) + 1
 
     print(f"\n  Summary: {success}/{total} succeeded, {errors} errors")
+
+    # Retry stats
+    multi_attempt = [r for r in results if r.get("attempts", 1) > 1]
+    if multi_attempt:
+        recovered_inline = sum(1 for r in multi_attempt if r.get("status") == "success")
+        print(f"  Inline retries: {len(multi_attempt)} needed, {recovered_inline} recovered")
     retried = [r for r in results if r.get("retried")]
     if retried:
         retried_recovered = sum(1 for r in retried if r.get("status") == "success")
-        print(f"  Retries: {len(retried)} attempted, {retried_recovered} recovered")
+        print(f"  Concurrent retries: {len(retried)} attempted, {retried_recovered} recovered")
+
+    # Structural vs transient breakdown for remaining errors
+    remaining_errors = [r for r in results if r.get("status") == "error"]
+    if remaining_errors:
+        structural = sum(1 for r in remaining_errors if r.get("retryable") is False)
+        transient = len(remaining_errors) - structural
+        parts = []
+        if structural:
+            parts.append(f"{structural} structural")
+        if transient:
+            parts.append(f"{transient} transient (exhausted retries)")
+        print(f"  Remaining errors: {', '.join(parts)}")
     if tier_counts:
         tier_str = ", ".join(f"{k}: {v}" for k, v in sorted(tier_counts.items()))
         print(f"  Tiers: {tier_str}")

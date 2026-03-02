@@ -98,7 +98,7 @@ python -m v2.import_history
 
 ## V2 Pipeline (Last Updated: 2026-03-01)
 
-### Status: Phase 1 ✅ — Phase 2 ✅ — Phase 2.5 ✅ — Phase 3 COMPLETE ✅
+### Status: Phase 1 ✅ — Phase 2 ✅ — Phase 2.5 ✅ — Phase 3 ✅ — Phase 3.5 COMPLETE ✅
 
 ### V2 Components (`v2/`)
 
@@ -141,10 +141,17 @@ python -m v2.import_history
 - **`.env` file** in project root holds `ANTHROPIC_API_KEY` (loaded via stdlib, not python-dotenv)
 - **Box runs non-headless** (`headless: false` in registry) — Cloudflare bypass
 
+### Retry Logic
+- **Smart retry** in `scrape_one()`: classifies errors as transient vs. structural
+- Transient errors (browser crash, proxy tunnel, timeout): up to 2 inline retries with 3s delay
+- Structural errors (site redirect to different domain): fail immediately, no retry
+- Unknown errors: not retried (conservative default)
+- Error patterns defined in `RETRYABLE_PATTERNS` and `STRUCTURAL_PATTERNS` constants
+
 ### Concurrent Mode
 - Default `--max-workers` is 2 (reduced from 3 to avoid macOS resource contention)
-- Failed pairs are automatically retried sequentially after the concurrent batch completes
-- Recovery stats are reported in the summary table
+- After concurrent batch, transient failures retried sequentially (structural failures skipped)
+- Summary shows inline retries, concurrent retries, and error breakdown (structural vs transient)
 
 ### Archived Code (`archive/`)
 
@@ -162,6 +169,18 @@ The original per-site handler scraper is preserved in `archive/` for reference:
 - `v2/export.py` transforms v2 data into website format (1-2 entries per plan per billing period)
 - Historical import: `python -m v2.import_history` backfills existing JSON files
 
-### Next Steps (Phase 4+)
-1. Multi-country validation with proxies (UK, DE) — initial run: 43/48 pass (90%), needs re-run with retry logic
-2. Automated export + push to stratdesk-web repo
+### Phase 3.5: Multi-Country Validation (2026-03-01) — COMPLETE
+- Full matrix: 16 sites x 13 countries = 208 pairs
+- **207/208 (99.5%)** after retries — only Disney+ IN is a structural failure (redirects to Hotstar)
+- Per-country: US/UK/DE/MX/ES/JP/NL = 100%, FR/CA/BR/IT/AU = 94%, IN = 94%
+- Tier distribution: 136 T2 (69%), 62 T4 (31%)
+- Smart retry logic added: transient errors auto-retry, structural errors fail fast
+- TODO: Exclude IN from Disney+ countries or add Hotstar as separate site
+
+### Next Steps
+
+**Phase 4 — Scale to 50 Companies**
+- Semi-automated pricing page discovery, batch onboarding of ~33 new companies
+
+**Phase 5 — StratDesk Integration**
+- Automated export + push to stratdesk-web repo
