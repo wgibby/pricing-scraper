@@ -32,7 +32,7 @@ from v2.browser import (
     stabilize_page,
     capture_page,
 )
-from v2.extractor import ExtractionResult, extract_with_fallback
+from v2.extractor import ExtractionResult, extract_with_fallback, is_usable
 from v2.interactions import pre_navigation_setup, run_interaction
 from v2.registry import get_sites, resolve_url, get_proxy_config, get_all_countries
 
@@ -90,6 +90,38 @@ def _is_retryable_error(error_str: str) -> bool:
             return True
     # Unknown errors: don't retry
     return False
+
+
+# ---------------------------------------------------------------------------
+# Extraction quality validation
+# ---------------------------------------------------------------------------
+
+def _describe_quality_failure(extraction) -> str:
+    """Return a descriptive error string for an extraction that failed the quality gate."""
+    if not extraction.plans:
+        return "No pricing plans found"
+
+    # Check if any plan has a numeric price
+    has_numeric = any(
+        p.monthly_price is not None
+        or p.annual_price is not None
+        or p.annual_monthly_equivalent is not None
+        for p in extraction.plans
+    )
+    if not has_numeric:
+        # Plans exist but no actual prices (only free/contact-sales, or empty)
+        has_free_or_contact = any(
+            p.is_free_tier or p.is_contact_sales for p in extraction.plans
+        )
+        if has_free_or_contact:
+            return "Plans found but no numeric prices extracted (only free/contact-sales tiers)"
+        return "Plans found but no numeric prices extracted"
+
+    if extraction.extraction_confidence.value == "low":
+        notes = extraction.extraction_notes or "no details"
+        return f"Low confidence extraction: {notes}"
+
+    return "Extraction failed quality gate"
 
 
 # ---------------------------------------------------------------------------
@@ -166,15 +198,22 @@ def scrape_one(
                 country=country,
             )
 
-            result["status"] = "success"
             result["tier"] = extraction_result.tier
             result["confidence"] = extraction_result.extraction.extraction_confidence.value
             result["plan_count"] = len(extraction_result.extraction.plans)
             result["extraction"] = extraction_result.extraction.model_dump()
             result["attempts"] = attempts
             result["retryable"] = None
-            result["error"] = None
-            break  # Success — exit retry loop
+
+            if is_usable(extraction_result.extraction):
+                result["status"] = "success"
+                result["error"] = None
+            else:
+                result["status"] = "error"
+                result["error"] = _describe_quality_failure(extraction_result.extraction)
+                _log(f"Quality gate failed: {result['error']}", site_id, country)
+
+            break  # Exit retry loop (quality failures are not retryable)
 
         except Exception as e:
             error_str = str(e)
@@ -473,7 +512,11 @@ def print_summary(results: list[dict]) -> None:
     # Summary stats
     total = len(results)
     success = sum(1 for r in results if r.get("status") == "success")
-    errors = total - success
+    all_errors = [r for r in results if r.get("status") == "error"]
+
+    # Split errors: quality failures (pipeline ran, data unusable) vs crashes (exceptions)
+    quality_errors = [r for r in all_errors if r.get("tier", "none") != "none"]
+    crashes = [r for r in all_errors if r.get("tier", "none") == "none"]
 
     tier_counts = {}
     confidence_counts = {}
@@ -484,7 +527,27 @@ def print_summary(results: list[dict]) -> None:
             c = r.get("confidence", "unknown")
             confidence_counts[c] = confidence_counts.get(c, 0) + 1
 
-    print(f"\n  Summary: {success}/{total} succeeded, {errors} errors")
+    print(f"\n  Summary: {success}/{total} with pricing, {len(all_errors)} without")
+
+    # Quality error breakdown
+    if quality_errors:
+        # Count by error type
+        no_plans = sum(1 for r in quality_errors if "No pricing plans" in (r.get("error") or ""))
+        no_prices = sum(1 for r in quality_errors if "no numeric prices" in (r.get("error") or "").lower())
+        low_conf = sum(1 for r in quality_errors if "Low confidence" in (r.get("error") or ""))
+        other_quality = len(quality_errors) - no_plans - no_prices - low_conf
+        parts = []
+        if low_conf:
+            parts.append(f"{low_conf} low confidence")
+        if no_prices:
+            parts.append(f"{no_prices} no prices")
+        if no_plans:
+            parts.append(f"{no_plans} no plans")
+        if other_quality:
+            parts.append(f"{other_quality} other")
+        print(f"  Quality errors: {', '.join(parts)}")
+
+    print(f"  Crashes: {len(crashes)}")
 
     # Retry stats
     multi_attempt = [r for r in results if r.get("attempts", 1) > 1]
@@ -496,17 +559,16 @@ def print_summary(results: list[dict]) -> None:
         retried_recovered = sum(1 for r in retried if r.get("status") == "success")
         print(f"  Concurrent retries: {len(retried)} attempted, {retried_recovered} recovered")
 
-    # Structural vs transient breakdown for remaining errors
-    remaining_errors = [r for r in results if r.get("status") == "error"]
-    if remaining_errors:
-        structural = sum(1 for r in remaining_errors if r.get("retryable") is False)
-        transient = len(remaining_errors) - structural
+    # Structural vs transient breakdown for crashes
+    if crashes:
+        structural = sum(1 for r in crashes if r.get("retryable") is False)
+        transient = len(crashes) - structural
         parts = []
         if structural:
             parts.append(f"{structural} structural")
         if transient:
             parts.append(f"{transient} transient (exhausted retries)")
-        print(f"  Remaining errors: {', '.join(parts)}")
+        print(f"  Crash breakdown: {', '.join(parts)}")
     if tier_counts:
         tier_str = ", ".join(f"{k}: {v}" for k, v in sorted(tier_counts.items()))
         print(f"  Tiers: {tier_str}")

@@ -108,7 +108,7 @@ def _try_tier_2(html: str, company: str, country: str) -> PricingExtraction | No
     _log("Tier 2 (HTML): calling LLM...")
     result = extract_pricing(cleaned, company, country, input_type="html")
 
-    if _is_good(result):
+    if is_usable(result):
         _log(f"Tier 2 (HTML): RESOLVED — confidence={result.extraction_confidence.value}, plans={len(result.plans)}")
         return result
 
@@ -137,7 +137,7 @@ def _try_tier_4(screenshot_path: str, company: str, country: str) -> PricingExtr
     return result
 
 
-def _is_good(result: PricingExtraction) -> bool:
+def is_usable(result: PricingExtraction) -> bool:
     """
     Quality gate: does this extraction resolve the tier?
 

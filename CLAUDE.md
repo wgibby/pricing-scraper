@@ -177,10 +177,15 @@ The original per-site handler scraper is preserved in `archive/` for reference:
 - Smart retry logic added: transient errors auto-retry, structural errors fail fast
 - TODO: Exclude IN from Disney+ countries or add Hotstar as separate site
 
+### Phase 5: StratDesk Integration — PLANNED (next session)
+- Remove MongoDB from stratdesk-web, simplify to static JSON file
+- Fix export format: group by (site, country) with nested `plans` array, wrap in `{"success": true, "data": [...]}`
+- Pipeline: `python -m v2.export --output /path/to/stratdesk-web/pricing_data_formatted.json`
+- stratdesk-web repo: `/Users/williamgibby/documents/documents - wgibby-mac-01/stratdesk_web/stratdesk-web`
+- 5 files to change: `v2/export.py` (this repo) + 4 files in stratdesk-web (2 API routes, package.json, .env.local)
+- Full plan: `.claude/plans/lovely-stargazing-creek.md`
+
 ### Next Steps
 
 **Phase 4 — Scale to 50 Companies**
 - Semi-automated pricing page discovery, batch onboarding of ~33 new companies
-
-**Phase 5 — StratDesk Integration**
-- Automated export + push to stratdesk-web repo
