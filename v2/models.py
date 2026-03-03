@@ -37,15 +37,27 @@ class PricingPlan(BaseModel):
     )
     monthly_price: Optional[float] = Field(
         None,
-        description="Monthly price. null if free tier or contact-sales only",
+        description=(
+            "Month-to-month price (no annual commitment). "
+            "If the displayed price says 'billed annually' or 'per year', do NOT put it here — "
+            "use annual_monthly_equivalent instead. null if free tier or contact-sales only."
+        ),
     )
     annual_price: Optional[float] = Field(
         None,
-        description="Full annual price (e.g., 119.88 for a year). null if not offered",
+        description=(
+            "Full annual price for a whole year (e.g., 119.88). "
+            "If the page shows '$X/mo billed annually', compute X * 12 and put the result here. "
+            "If the page shows '$Y/year', put Y here. null if annual billing is not offered."
+        ),
     )
     annual_monthly_equivalent: Optional[float] = Field(
         None,
-        description="Per-month price when billed annually (e.g., 9.99/mo billed annually). null if not shown",
+        description=(
+            "Per-month rate for annual subscribers (e.g., 9.99 when billed annually). "
+            "If the page shows '$X/mo billed annually', put X here. "
+            "If the page shows '$Y/year', compute Y / 12 and put the result here."
+        ),
     )
     billing_periods_available: list[BillingPeriod] = Field(
         description="Which billing periods are offered for this plan"
@@ -64,7 +76,10 @@ class PricingPlan(BaseModel):
     )
     notes: Optional[str] = Field(
         None,
-        description="Any relevant notes (e.g., 'Up to 6 family members', 'First 3 months free')",
+        description=(
+            "Any relevant notes (e.g., 'Up to 6 family members', 'First 3 months free'). "
+            "Do NOT put price information here — prices must go in the price fields above."
+        ),
     )
 
 

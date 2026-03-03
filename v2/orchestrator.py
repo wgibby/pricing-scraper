@@ -93,6 +93,61 @@ def _is_retryable_error(error_str: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Post-processing: fill missing price fields + filter blocklisted plans
+# ---------------------------------------------------------------------------
+
+def _postprocess_extraction(result_dict: dict, site_config: dict) -> dict:
+    """
+    Post-process extraction results to fix common LLM gaps:
+    1. Compute annual_price from annual_monthly_equivalent (and vice versa).
+    2. Remove plans matching the site's plan_name_blocklist.
+
+    Modifies result_dict["extraction"] in place and returns result_dict.
+    """
+    extraction = result_dict.get("extraction")
+    if not extraction or not extraction.get("plans"):
+        return result_dict
+
+    plans = extraction["plans"]
+    blocklist = [n.lower() for n in site_config.get("plan_name_blocklist", [])]
+
+    # Filter blocklisted plans
+    if blocklist:
+        before = len(plans)
+        plans = [
+            p for p in plans
+            if p.get("plan_name", "").lower() not in blocklist
+        ]
+        removed = before - len(plans)
+        if removed:
+            _log(
+                f"Filtered {removed} blocklisted plan(s)",
+                site_config["id"],
+                result_dict.get("country", ""),
+            )
+        extraction["plans"] = plans
+
+    # Fill missing price fields from annual_monthly_equivalent
+    for plan in plans:
+        ame = plan.get("annual_monthly_equivalent")
+        annual = plan.get("annual_price")
+        monthly = plan.get("monthly_price")
+
+        # If annual_monthly_equivalent is set but annual_price is null: compute it
+        if ame is not None and annual is None:
+            plan["annual_price"] = round(ame * 12, 2)
+
+        # If annual_price is set but annual_monthly_equivalent is null: compute it
+        if plan.get("annual_price") is not None and ame is None:
+            plan["annual_monthly_equivalent"] = round(plan["annual_price"] / 12, 2)
+
+    # Update plan_count in case blocklist removed some
+    result_dict["plan_count"] = len(plans)
+
+    return result_dict
+
+
+# ---------------------------------------------------------------------------
 # Extraction quality validation
 # ---------------------------------------------------------------------------
 
@@ -205,6 +260,9 @@ def scrape_one(
             result["attempts"] = attempts
             result["retryable"] = None
 
+            # Post-process: fill missing price fields, filter blocklisted plans
+            _postprocess_extraction(result, site_config)
+
             if is_usable(extraction_result.extraction):
                 result["status"] = "success"
                 result["error"] = None
@@ -278,10 +336,11 @@ def _browser_phase(
 
             # 6. Navigate
             _log("Navigating...", site_id, country)
+            wait_until = site_config.get("navigation_wait_until", "networkidle")
             try:
-                page.goto(url, wait_until="networkidle", timeout=45000)
+                page.goto(url, wait_until=wait_until, timeout=45000)
             except Exception:
-                _log("networkidle timeout, retrying with domcontentloaded", site_id, country)
+                _log(f"{wait_until} timeout, retrying with domcontentloaded", site_id, country)
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
             # 7. Dismiss cookies
@@ -294,7 +353,8 @@ def _browser_phase(
                 run_interaction(page, site_config, country)
 
             # 9. Stabilize page
-            stabilize_page(page)
+            extra_wait = site_config.get("stabilization_wait_ms", 0)
+            stabilize_page(page, extra_wait_ms=extra_wait)
 
             # 10. Capture HTML + screenshot
             _log("Capturing page...", site_id, country)
@@ -582,6 +642,70 @@ def print_summary(results: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Pricing coverage metric
+# ---------------------------------------------------------------------------
+
+def _count_pricing_coverage(results: list[dict]) -> tuple[int, int, list[dict]]:
+    """
+    Count paid plans with at least one price field populated.
+
+    Returns:
+        (plans_with_price, total_paid_plans, gaps_list)
+        where gaps_list has dicts: {site_id, country, plan_name}
+    """
+    total_paid = 0
+    with_price = 0
+    gaps = []
+
+    for r in results:
+        if r.get("status") != "success":
+            continue
+        extraction = r.get("extraction")
+        if not extraction:
+            continue
+        site_id = r.get("site_id", "?")
+        country = r.get("country", "?")
+
+        for plan in extraction.get("plans", []):
+            if plan.get("is_free_tier") or plan.get("is_contact_sales"):
+                continue
+            total_paid += 1
+            has_price = (
+                plan.get("monthly_price") is not None
+                or plan.get("annual_price") is not None
+            )
+            if has_price:
+                with_price += 1
+            else:
+                gaps.append({
+                    "site_id": site_id,
+                    "country": country,
+                    "plan_name": plan.get("plan_name", "?"),
+                })
+
+    return with_price, total_paid, gaps
+
+
+def print_coverage(results: list[dict], show_gaps: bool = False) -> None:
+    """Print pricing coverage metric. Optionally show per-plan gaps."""
+    with_price, total_paid, gaps = _count_pricing_coverage(results)
+
+    if total_paid == 0:
+        pct = 0.0
+    else:
+        pct = (with_price / total_paid) * 100
+
+    print(f"\n  Pricing coverage: {with_price}/{total_paid} paid plans ({pct:.1f}%)")
+
+    if show_gaps and gaps:
+        print(f"\n  PRICING COVERAGE GAPS ({len(gaps)} plans missing prices):")
+        for g in sorted(gaps, key=lambda x: (x["site_id"], x["country"])):
+            print(f"    {g['site_id']}/{g['country'].upper()}: {g['plan_name']} (no price)")
+    elif show_gaps:
+        print(f"\n  No pricing coverage gaps — all paid plans have prices!")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -620,6 +744,10 @@ def main():
     parser.add_argument(
         "--no-db", action="store_true",
         help="Skip SQLite storage and change detection (JSON only)",
+    )
+    parser.add_argument(
+        "--coverage-report", action="store_true",
+        help="Print per-plan pricing coverage gaps after scrape",
     )
     args = parser.parse_args()
 
@@ -683,6 +811,9 @@ def main():
 
     # Summary
     print_summary(results)
+
+    # Pricing coverage metric (always shown; --coverage-report shows per-plan gaps)
+    print_coverage(results, show_gaps=args.coverage_report)
 
 
 if __name__ == "__main__":

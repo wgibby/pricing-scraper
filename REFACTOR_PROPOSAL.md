@@ -443,6 +443,22 @@ Smart retry logic added to orchestrator:
 
 Success criteria: 90%+ pass rate across all 13 countries. ✅ Met — 99.5%.
 
+### Phase 3.6: 100% Pricing Coverage ✅ COMPLETE (2026-03-03)
+**Goal:** Every paid plan has at least `monthly_price` OR `annual_price` filled in.
+
+Deliverables:
+- [x] Post-processing: auto-compute annual_price from annual_monthly_equivalent (and vice versa)
+- [x] Remove Adobe (unreliable pricing page) → 15 active sites
+- [x] Restrict Peacock to US-only (geo-blocked elsewhere)
+- [x] Remove Disney+ IN (redirects to Hotstar)
+- [x] Filter Spotify "Audiobooks Access" via plan_name_blocklist
+- [x] Prompt engineering: explicit price field rules in SYSTEM_PROMPT + model descriptions
+- [x] Netflix overhaul: locale URLs, anti-detection, Japanese handling, multi-click fallbacks
+- [x] Browser fixes: configurable stabilization wait, Disney+ price-wait, Zwift region popup, YouTube nav
+- [x] Coverage metric: `--coverage-report` flag, always-on paid plan coverage after summary
+
+Active sites: 15 (was 16). Total pairs: 182 (was 208).
+
 ### Phase 4: Scale to 50 Companies
 **Goal:** Rapid onboarding of ~33 new companies
 
@@ -1211,6 +1227,30 @@ Smart retry logic added to `orchestrator.py`:
 - `print_summary()` shows inline retries, concurrent retries, error breakdown
 
 Result dict now includes `attempts` (int) and `retryable` (bool/None) fields.
+
+### Phase 3.6 Session (2026-03-03) — COMPLETE
+
+**100% pricing coverage — post-processing, prompt engineering, Netflix overhaul, browser fixes**
+
+Registry changes:
+- Adobe removed (`status: "removed"`) — 15 active sites
+- Peacock restricted to `["us"]` (geo-blocked everywhere else)
+- Disney+ IN removed (Hotstar redirect), added `disney_wait_for_prices` interaction + `stabilization_wait_ms: 8000`
+- Spotify: `plan_name_blocklist: ["Audiobooks Access"]`
+- Netflix: locale-based URLs (`?locale={locale}`), `url_country_format: "locale_tag"`
+- Evernote: `stabilization_wait_ms: 6000`
+- YouTube: `navigation_wait_until: "load"`
+- Zwift: `zwift_region_popup` interaction
+
+Code changes:
+- `orchestrator.py`: `_postprocess_extraction()` — auto-compute annual_price/annual_monthly_equivalent, filter blocklisted plans; `navigation_wait_until` config; `stabilization_wait_ms` passthrough; `_count_pricing_coverage()` + `print_coverage()` + `--coverage-report` flag
+- `models.py`: clarified price field descriptions (month-to-month vs billed-annually, compute instructions)
+- `llm_client.py`: SYSTEM_PROMPT rules for `$X/mo billed annually` → price fields, not notes
+- `registry.py`: `COUNTRY_TO_LOCALE` mapping, `locale_tag` format in `resolve_url()`
+- `interactions.py`: Netflix overhaul (anti-detection init_script, ultra-stealth cookies, Japanese handling, multi-click fallbacks, expanded selectors, country-prefixed fallback nav, natural scrolling). Added `_disney_wait_for_prices()` and `_zwift_region_popup()`.
+- `browser.py`: `stabilize_page(extra_wait_ms=)` parameter
+
+Total pairs: 182 (15 sites, 12-13 countries each, Peacock US-only).
 
 ---
 

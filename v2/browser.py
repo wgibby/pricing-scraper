@@ -238,16 +238,21 @@ def dismiss_cookies(page) -> bool:
 # Page stabilization
 # ---------------------------------------------------------------------------
 
-def stabilize_page(page) -> None:
+def stabilize_page(page, extra_wait_ms: int = 0) -> None:
     """
     Stabilize the page by scrolling to trigger lazy-loaded content,
     then scrolling back to top.
 
     Args:
         page: Playwright page object.
+        extra_wait_ms: Additional wait time in ms for slow-loading sites.
     """
     delay = random.uniform(1.5, 3.0)
     page.wait_for_timeout(int(delay * 1000))
+
+    # Extra stabilization for sites with async price loading
+    if extra_wait_ms > 0:
+        page.wait_for_timeout(extra_wait_ms)
 
     # Gentle scroll to trigger lazy content
     page.evaluate("window.scrollBy(0, 300)")

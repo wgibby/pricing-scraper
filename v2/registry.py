@@ -47,11 +47,20 @@ def get_sites(site_ids: list[str] | None = None) -> list[dict]:
     return matched
 
 
+# Locale tags for Netflix (and other sites that use locale-based URLs)
+COUNTRY_TO_LOCALE = {
+    "us": "en-US", "uk": "en-GB", "de": "de-DE", "fr": "fr-FR",
+    "jp": "ja-JP", "in": "en-IN", "br": "pt-BR", "ca": "en-CA",
+    "au": "en-AU", "mx": "es-MX", "es": "es-ES", "it": "it-IT",
+    "nl": "nl-NL",
+}
+
+
 def resolve_url(site_config: dict, country: str) -> str:
     """
     Resolve the pricing URL for a (site, country) pair.
 
-    For url_country_code strategy: replaces {country} placeholder in the URL.
+    For url_country_code strategy: replaces {country} or {locale} in the URL.
     For geo_ip / other strategies: returns the URL as-is (geo handled by proxy).
 
     Args:
@@ -64,14 +73,19 @@ def resolve_url(site_config: dict, country: str) -> str:
     url = site_config["pricing_url"]
     strategy = site_config["geo_strategy"]
 
-    if strategy == "url_country_code" and "{country}" in url:
+    if strategy == "url_country_code":
         fmt = site_config.get("url_country_format", "iso_alpha2_lower")
-        if fmt == "iso_alpha2_lower":
-            return url.replace("{country}", country.lower())
-        elif fmt == "iso_alpha2_upper":
-            return url.replace("{country}", country.upper())
-        else:
-            return url.replace("{country}", country.lower())
+
+        if fmt == "locale_tag" and "{locale}" in url:
+            locale = COUNTRY_TO_LOCALE.get(country.lower(), f"en-{country.upper()}")
+            return url.replace("{locale}", locale)
+        elif "{country}" in url:
+            if fmt == "iso_alpha2_lower":
+                return url.replace("{country}", country.lower())
+            elif fmt == "iso_alpha2_upper":
+                return url.replace("{country}", country.upper())
+            else:
+                return url.replace("{country}", country.lower())
 
     return url
 

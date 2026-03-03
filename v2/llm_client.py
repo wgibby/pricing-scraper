@@ -52,7 +52,14 @@ SYSTEM_PROMPT = (
     "displayed. If a price shows a comma as decimal separator (European format like "
     "€9,99), convert to dot notation (9.99). For Japanese yen and other zero-decimal "
     "currencies, use integer values. If you cannot determine a field with confidence, "
-    "set extraction_confidence to \"low\" and explain in extraction_notes."
+    "set extraction_confidence to \"low\" and explain in extraction_notes.\n\n"
+    "CRITICAL PRICE FIELD RULES — every paid plan MUST have at least one price field:\n"
+    "- \"$X/month\" (no annual qualifier) → monthly_price = X\n"
+    "- \"$X/mo billed annually\" → annual_monthly_equivalent = X AND annual_price = X * 12\n"
+    "- \"$Y/year\" → annual_price = Y AND annual_monthly_equivalent = Y / 12\n"
+    "- Per-user prices (e.g., \"$25/user/month\"): use the per-user price as-is.\n"
+    "- NEVER put price data only in the notes field. Prices MUST go in price fields.\n"
+    "- If a plan has a visible price, it is NOT free — set is_free_tier to false."
 )
 
 

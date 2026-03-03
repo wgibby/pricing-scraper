@@ -17,6 +17,7 @@
       "enhanced_proxy_validation": false,
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,
+      "plan_name_blocklist": ["Audiobooks Access"],
       "status": "active"
     },
     {
@@ -24,9 +25,9 @@
       "display_name": "Netflix",
       "domain": "netflix.com",
       "category": "video_streaming",
-      "pricing_url": "https://www.netflix.com/signup/planform",
-      "geo_strategy": "geo_ip",
-      "url_country_format": null,
+      "pricing_url": "https://www.netflix.com/signup?locale={locale}",
+      "geo_strategy": "url_country_code",
+      "url_country_format": "locale_tag",
       "browser": "firefox",
       "headless": true,
       "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"],
@@ -125,7 +126,7 @@
       "enhanced_proxy_validation": false,
       "stealth_profile": "firefox_stealth",
       "skip_init_script": false,
-      "status": "active"
+      "status": "removed"
     },
     {
       "id": "evernote",
@@ -143,6 +144,7 @@
       "enhanced_proxy_validation": false,
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,
+      "stabilization_wait_ms": 6000,
       "status": "active"
     },
     {
@@ -173,7 +175,7 @@
       "url_country_format": null,
       "browser": "firefox",
       "headless": true,
-      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"],
+      "countries": ["us"],
       "requires_interaction": false,
       "interaction_type": null,
       "enhanced_proxy_validation": false,
@@ -191,12 +193,13 @@
       "url_country_format": null,
       "browser": "firefox",
       "headless": true,
-      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"],
-      "requires_interaction": false,
-      "interaction_type": null,
+      "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "nl", "au"],
+      "requires_interaction": true,
+      "interaction_type": "disney_wait_for_prices",
       "enhanced_proxy_validation": true,
       "stealth_profile": "firefox_stealth",
       "skip_init_script": false,
+      "stabilization_wait_ms": 8000,
       "status": "active"
     },
     {
@@ -215,6 +218,7 @@
       "enhanced_proxy_validation": true,
       "stealth_profile": "firefox_stealth",
       "skip_init_script": false,
+      "navigation_wait_until": "load",
       "status": "active"
     },
     {
@@ -282,8 +286,8 @@
       "browser": "chromium",
       "headless": true,
       "countries": ["us", "uk", "fr", "ca", "br", "mx", "it", "es", "de", "jp", "in", "nl", "au"],
-      "requires_interaction": false,
-      "interaction_type": null,
+      "requires_interaction": true,
+      "interaction_type": "zwift_region_popup",
       "enhanced_proxy_validation": false,
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,

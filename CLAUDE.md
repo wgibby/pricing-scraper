@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LLM-powered pricing scraper that collects subscription pricing data from 16 websites
+LLM-powered pricing scraper that collects subscription pricing data from 15 websites
 across multiple countries. Uses Playwright for browser automation and Claude (Sonnet) for
 intelligent extraction via a tiered cascade (HTML → Vision).
 
@@ -98,7 +98,7 @@ python -m v2.import_history
 
 ## V2 Pipeline (Last Updated: 2026-03-01)
 
-### Status: Phase 1 ✅ — Phase 2 ✅ — Phase 2.5 ✅ — Phase 3 ✅ — Phase 3.5 COMPLETE ✅
+### Status: Phase 1 ✅ — Phase 2 ✅ — Phase 2.5 ✅ — Phase 3 ✅ — Phase 3.5 ✅ — Phase 3.6 ✅
 
 ### V2 Components (`v2/`)
 
@@ -120,17 +120,17 @@ python -m v2.import_history
 | `export.py` | Export latest prices as website-compatible JSON, `--output` / `--dry-run` |
 | `import_history.py` | One-time import of existing `results/v2/*.json` files into SQLite |
 
-### Phase 2 Validation Results (16/16 US)
-- 16/16 sites succeeded (100% pass rate)
+### Phase 2 Validation Results (16/16 US → now 15 sites)
+- Adobe removed (Phase 3.6) — 15 active sites
 - 13 sites resolve at Tier 2 (HTML) — 81%
-- 3 sites resolve at Tier 4 (Vision) — 19% (Adobe, Figma, Netflix)
+- 2 sites resolve at Tier 4 (Vision) — Figma, Netflix
 - 5 high confidence, 10 medium, 1 low (Netflix)
 - Concurrent mode validated (ThreadPoolExecutor, per-thread browsers)
 - Results saved to `results/v2/{site}_{country}_{timestamp}.json`
 - Screenshots saved to `screenshots/v2/{site}_{country}_{timestamp}.png`
 
 ### Browser Requirements
-- **Firefox required (8):** Adobe, Box, Canva, ChatGPT+, Disney+, Netflix, Peacock, YouTube
+- **Firefox required (7):** Box, Canva, ChatGPT+, Disney+, Netflix, Peacock, YouTube
 - **Chromium works (8):** Audible, Dropbox, Evernote, Figma, Grammarly, Notion, Spotify, Zwift
 
 ### Critical Technical Notes
@@ -175,7 +175,51 @@ The original per-site handler scraper is preserved in `archive/` for reference:
 - Per-country: US/UK/DE/MX/ES/JP/NL = 100%, FR/CA/BR/IT/AU = 94%, IN = 94%
 - Tier distribution: 136 T2 (69%), 62 T4 (31%)
 - Smart retry logic added: transient errors auto-retry, structural errors fail fast
-- TODO: Exclude IN from Disney+ countries or add Hotstar as separate site
+
+### Phase 3.6: 100% Pricing Coverage (2026-03-03)
+Changes to achieve full pricing coverage across all paid plans:
+
+**Registry cleanup:**
+- Adobe removed (`status: "removed"`) — unreliable pricing page
+- Peacock restricted to US-only (geo-blocked everywhere else)
+- Disney+ IN removed (redirects to Hotstar)
+- Spotify: `plan_name_blocklist: ["Audiobooks Access"]` to filter spurious upsell panel
+
+**Post-processing (`v2/orchestrator.py`):**
+- `_postprocess_extraction()` runs after LLM extraction, before storage
+- Computes `annual_price = annual_monthly_equivalent * 12` when missing
+- Computes `annual_monthly_equivalent = annual_price / 12` when missing
+- Filters plans matching `plan_name_blocklist` from registry config
+
+**Prompt engineering (`v2/models.py`, `v2/llm_client.py`):**
+- Price field descriptions clarified: month-to-month vs billed-annually
+- SYSTEM_PROMPT now has explicit rules for `$X/mo billed annually` → annual_monthly_equivalent + annual_price
+- Prices must go in price fields, not notes
+
+**Netflix overhaul (`v2/interactions.py`, `v2/registry.py`, registry):**
+- Locale-based URLs: `?locale=en-US`, `?locale=ja-JP`, etc. (was bare `/signup/planform`)
+- Anti-detection init_script: webdriver mask, fake plugins, automation trace removal
+- **Locale-matched init_script**: `navigator.languages` and `Accept-Language` header match target country (was hardcoded to en-US, causing Netflix to switch to English after clicks)
+- Ultra-stealth cookie consent via JS eval + CSS injection
+- **Zero-width character stripping** (`U+FEFF` etc.): Netflix injects invisible chars between every character in non-English pages as anti-scraping; `_strip_zero_width()` applied to all text matching
+- **JS CTA click** (`_netflix_js_click_cta`): finds button by DOM size/position instead of text (bypasses zero-width char issues); uses Playwright click + dispatchEvent for React reliability
+- **Polling with re-click** (`_netflix_wait_for_pricing`): polls every 2s for up to 18s after click; re-clicks CTA at halfway point if pricing hasn't appeared (handles flaky React hydration)
+- **Auto language detection**: step indicator check scans ALL language patterns, not just expected country, to handle Netflix serving English for non-English locales
+- Visible text pricing detection: `_has_pricing_content()` uses `page.inner_text('body')` (not raw HTML) and requires BOTH a currency signal AND a billing period signal
+- Multi-click fallback methods (normal → force), Japanese locator, country-prefixed fallback nav
+- Natural scrolling after reaching plan form
+- **13/13 countries validated** (2026-03-03): all Tier 2, all high confidence
+
+**Browser fixes:**
+- Configurable `stabilization_wait_ms` in registry (Disney+ 8000ms, Evernote 6000ms)
+- `navigation_wait_until` config (YouTube uses `"load"` instead of `"networkidle"`)
+- Disney+ `disney_wait_for_prices` interaction: `wait_for_selector` on price elements
+- Zwift `zwift_region_popup` interaction: close button + Escape dismissal
+
+**Coverage metric (`v2/orchestrator.py`):**
+- `--coverage-report` flag: shows per-plan pricing gaps
+- Pricing coverage always printed after summary (count of paid plans with prices)
+- `_count_pricing_coverage()` counts paid plans (excluding free/contact-sales)
 
 ### Phase 5: StratDesk Integration — PLANNED (next session)
 - Remove MongoDB from stratdesk-web, simplify to static JSON file
@@ -186,6 +230,21 @@ The original per-site handler scraper is preserved in `archive/` for reference:
 - Full plan: `.claude/plans/lovely-stargazing-creek.md`
 
 ### Next Steps
+
+**Immediate — Port Archived Handler Techniques**
+Review complete (see memory). Techniques worth porting to v2:
+1. **Cloudflare polling loop (Box):** wait up to 60s for Turnstile challenge to auto-resolve
+2. **Human mouse simulation (ChatGPT):** `page.mouse.move()` + `bounding_box()` click instead of `element.click()`
+3. **DRM permission mock (Disney+):** grant `drm` and `persistent-storage` permissions for streaming sites
+4. **Per-country timezone/locale injection (Disney+):** `countrySettings` dict in init_script
+5. **`euconsent-v2` and `CybotCookiebotDialogClosed` cookies (Figma):** IAB TCF v2 + Cybot consent
+6. **URL param billing selection (Dropbox):** `?billing=monthly` avoids DOM toggle
+7. **Expand collapsed sections (Evernote):** click `[aria-expanded="false"]` before extraction
+8. **Full validation: `python -m v2.orchestrator --all --all-countries --concurrent --coverage-report`**
+
+**Phase 5 — StratDesk Integration** (see plan in `.claude/plans/lovely-stargazing-creek.md`)
+- Remove MongoDB from stratdesk-web, simplify to static JSON file
+- Fix export format for website consumption
 
 **Phase 4 — Scale to 50 Companies**
 - Semi-automated pricing page discovery, batch onboarding of ~33 new companies
