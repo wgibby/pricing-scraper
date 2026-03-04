@@ -96,9 +96,9 @@ python -m v2.import_history
 - `results/v2/{site}_{country}_{timestamp}.json` - Structured pricing data (kept for debugging)
 - `screenshots/v2/{site}_{country}_{timestamp}.png` - Browser screenshots
 
-## V2 Pipeline (Last Updated: 2026-03-01)
+## V2 Pipeline (Last Updated: 2026-03-03)
 
-### Status: Phase 1 ✅ — Phase 2 ✅ — Phase 2.5 ✅ — Phase 3 ✅ — Phase 3.5 ✅ — Phase 3.6 ✅
+### Status: Phase 1 ✅ — Phase 2 ✅ — Phase 2.5 ✅ — Phase 3 ✅ — Phase 3.5 ✅ — Phase 3.6 ✅ — Phase 5a ✅ — Phase 5b ✅
 
 ### V2 Components (`v2/`)
 
@@ -117,7 +117,7 @@ python -m v2.import_history
 | `db.py` | SQLite schema, connection management, `--info` CLI |
 | `store.py` | Write orchestrator results to SQLite (runs/results/plans) |
 | `diff.py` | Detect price changes between runs, `--last` / `--run-id` CLI |
-| `export.py` | Export latest prices as website-compatible JSON, `--output` / `--dry-run` |
+| `export.py` | Export latest prices as grouped website-compatible JSON, `--output` / `--dry-run` |
 | `import_history.py` | One-time import of existing `results/v2/*.json` files into SQLite |
 
 ### Phase 2 Validation Results (16/16 US → now 15 sites)
@@ -166,7 +166,7 @@ The original per-site handler scraper is preserved in `archive/` for reference:
 - Tables: `runs`, `results`, `plans`, `price_changes` + `latest_results` view
 - Orchestrator auto-stores results and runs change detection after each scrape
 - Use `--no-db` flag to skip SQLite (JSON-only mode, same as pre-Phase 3)
-- `v2/export.py` transforms v2 data into website format (1-2 entries per plan per billing period)
+- `v2/export.py` transforms v2 data into grouped website format: `{success, data: [{website, country, plans}]}`
 - Historical import: `python -m v2.import_history` backfills existing JSON files
 
 ### Phase 3.5: Multi-Country Validation (2026-03-01) — COMPLETE
@@ -221,30 +221,59 @@ Changes to achieve full pricing coverage across all paid plans:
 - Pricing coverage always printed after summary (count of paid plans with prices)
 - `_count_pricing_coverage()` counts paid plans (excluding free/contact-sales)
 
-### Phase 5: StratDesk Integration — PLANNED (next session)
-- Remove MongoDB from stratdesk-web, simplify to static JSON file
-- Fix export format: group by (site, country) with nested `plans` array, wrap in `{"success": true, "data": [...]}`
-- Pipeline: `python -m v2.export --output /path/to/stratdesk-web/pricing_data_formatted.json`
+### Phase 5a: Export Format Fix (2026-03-03) — COMPLETE
+- `v2/export.py` restructured from flat entries to grouped format
+- Output: `{success: true, data: [{website, country, timestamp, plans: [...]}]}`
+- Export now filters removed sites (adobe) via registry status check
+- 173 groups, 828 plan entries from 15 active sites across 13 countries
+- Pipeline: `./venv/bin/python -m v2.export --output /path/to/stratdesk-web/pricing_data_formatted.json`
+
+### Phase 5b: Public /data Page (2026-03-03) — COMPLETE
 - stratdesk-web repo: `/Users/williamgibby/documents/documents - wgibby-mac-01/stratdesk_web/stratdesk-web`
-- 5 files to change: `v2/export.py` (this repo) + 4 files in stratdesk-web (2 API routes, package.json, .env.local)
-- Full plan: `.claude/plans/lovely-stargazing-creek.md`
+
+**Files created/changed in stratdesk-web:**
+- `app/data/page.tsx` (new) — server component, reads `pricing_data_formatted.json` at build time via `fs`
+- `components/DataTable.tsx` (new) — client component with Monthly/Annual/Trials/Features view switching
+- `components/Hero.tsx` (edited) — added "Explore Pricing Data" CTA button linking to `/data`
+- `app/page.tsx` (edited) — removed CoverageMatrix, added "Pricing Data" nav link
+
+**DataTable features:**
+- Groups plans by `website + planName`, stores both monthly and yearly per country
+- View-aware row filtering: Monthly/Annual views hide rows without matching duration data
+- Sticky Company/Plan columns, 13 scrollable country columns (US, UK, FR, CA, DE, JP, AU, BR, MX, IT, ES, NL, IN)
+- Search bar filtering by company or plan name
+- Company name formatting: `chatgpt_plus` → "ChatGPT+", `disney_plus` → "Disney+"
+- `font-mono tabular-nums` for price alignment, non-breaking space in prices
+- "Beta" badges on Trials and Features tabs
+- Footer stats (plan/company/country counts)
+- No MongoDB, no API calls — pure static data from props
+
+**Export fix (`v2/export.py`):**
+- Now imports `load_registry()` and filters out sites with `status != "active"`
+- Eliminates stale historical data from removed sites (adobe)
+
+### Session 12 Validation Results (2026-03-03)
+- Partial run: 15 sites x 4 countries (US/DE/JP/BR) = 57 pairs
+- **54/57 passed (94.7%)** — zero crashes, Netflix 4/4 perfect
+- 3 failures: Box BR/DE/JP (Cloudflare blocks non-US proxies)
+- Pricing coverage: 162/163 paid plans (99.4%)
+- Only gap: ChatGPT+ BR "Business" plan missing price
 
 ### Next Steps
 
-**Immediate — Port Archived Handler Techniques**
+**Immediate — Phase 5c: Plan Name Standardization**
+- Plan names vary across countries for same plan (e.g., Netflix "Estándar" vs "Standard")
+- Need normalization layer so grouped rows match correctly across languages
+- User flagged this as the next priority
+
+**Then — Port Archived Handler Techniques**
 Review complete (see memory). Techniques worth porting to v2:
 1. **Cloudflare polling loop (Box):** wait up to 60s for Turnstile challenge to auto-resolve
 2. **Human mouse simulation (ChatGPT):** `page.mouse.move()` + `bounding_box()` click instead of `element.click()`
 3. **DRM permission mock (Disney+):** grant `drm` and `persistent-storage` permissions for streaming sites
 4. **Per-country timezone/locale injection (Disney+):** `countrySettings` dict in init_script
 5. **`euconsent-v2` and `CybotCookiebotDialogClosed` cookies (Figma):** IAB TCF v2 + Cybot consent
-6. **URL param billing selection (Dropbox):** `?billing=monthly` avoids DOM toggle
-7. **Expand collapsed sections (Evernote):** click `[aria-expanded="false"]` before extraction
-8. **Full validation: `python -m v2.orchestrator --all --all-countries --concurrent --coverage-report`**
-
-**Phase 5 — StratDesk Integration** (see plan in `.claude/plans/lovely-stargazing-creek.md`)
-- Remove MongoDB from stratdesk-web, simplify to static JSON file
-- Fix export format for website consumption
+6. **Expand collapsed sections (Evernote):** click `[aria-expanded="false"]` before extraction
 
 **Phase 4 — Scale to 50 Companies**
 - Semi-automated pricing page discovery, batch onboarding of ~33 new companies

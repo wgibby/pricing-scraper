@@ -18,6 +18,23 @@
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,
       "plan_name_blocklist": ["Audiobooks Access"],
+      "plan_name_map": {
+        "Gratis abonnement (Free)": "Free",
+        "Kostenloses Abo von Spotify": "Free",
+        "Piano gratuito di Spotify": "Free",
+        "Servicio gratuito de Spotify": "Free",
+        "Spotify Free": "Free",
+        "Spotify Freeプラン": "Free",
+        "Spotify sans abonnement": "Free",
+        "Premium Personnel": "Premium Individual",
+        "Premium Standard": "Premium Individual",
+        "Premium Familiar": "Premium Family",
+        "Premium Famille": "Premium Family",
+        "Premium Família": "Premium Family",
+        "Premium Estudiantes": "Premium Student",
+        "Premium Universitário": "Premium Student",
+        "Premium Étudiants": "Premium Student"
+      },
       "status": "active"
     },
     {
@@ -36,6 +53,20 @@
       "enhanced_proxy_validation": true,
       "stealth_profile": "firefox_stealth",
       "skip_init_script": false,
+      "plan_name_map": {
+        "Estándar": "Standard",
+        "Padrão": "Standard",
+        "Standaard": "Standard",
+        "スタンダード": "Standard",
+        "Estándar con anuncios": "Standard with Ads",
+        "Padrão com anúncios": "Standard with Ads",
+        "Standard con pubblicità": "Standard with Ads",
+        "Standard avec pub": "Standard with Ads",
+        "Standard-Abo mit Werbung": "Standard with Ads",
+        "Standard with ads": "Standard with Ads",
+        "広告つきスタンダード": "Standard with Ads",
+        "プレミアム": "Premium"
+      },
       "status": "active"
     },
     {
@@ -72,6 +103,25 @@
       "enhanced_proxy_validation": false,
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,
+      "plan_name_map": {
+        "Audible": "Standard",
+        "Audible Abbonamento": "Standard",
+        "Audible Plus": "Standard",
+        "Audible Standard": "Standard",
+        "Audible – Assinatura Mensal": "Standard",
+        "スタンダードプラン (Standard Plan)": "Standard",
+        "Audible – Oferta por Tempo Limitado": "Standard (Limited Offer)",
+        "Audible Premium": "Premium Plus",
+        "Audible Premium Plus": "Premium Plus",
+        "プレミアムプラン (Premium Plan)": "Premium Plus",
+        "Audible Premium Plus – 1 crédito al mes": "Premium Plus (1 credit/mo)",
+        "Audible Premium Plus – 2 créditos al mes": "Premium Plus (2 credits/mo)",
+        "Audible Premium Plus Anual – 12 créditos": "Premium Plus Annual (12 credits)",
+        "Audible Premium Plus Anual – 24 créditos": "Premium Plus Annual (24 credits)",
+        "12 credits": "Premium Plus Annual (12 credits)",
+        "24 Credits": "Premium Plus Annual (24 credits)",
+        "2 credits a month": "Premium Plus (2 credits/mo)"
+      },
       "status": "active"
     },
     {
@@ -200,6 +250,12 @@
       "stealth_profile": "firefox_stealth",
       "skip_init_script": false,
       "stabilization_wait_ms": 8000,
+      "plan_name_map": {
+        "Standard With Ads": "Standard with Ads",
+        "Standard con pubblicità": "Standard with Ads",
+        "Disney+ Premium": "Premium",
+        "Disney+ Standard": "Standard"
+      },
       "status": "active"
     },
     {
@@ -219,6 +275,17 @@
       "stealth_profile": "firefox_stealth",
       "skip_init_script": false,
       "navigation_wait_until": "load",
+      "plan_name_map": {
+        "Individual": "Premium Individual",
+        "Individual (Monthly)": "Premium Individual",
+        "Individual (Annual)": "Premium Individual",
+        "Premium (Individual)": "Premium Individual",
+        "YouTube Premium": "Premium Individual",
+        "Family": "Premium Family",
+        "Student": "Premium Student",
+        "Premium Two-person": "Premium Duo",
+        "Premium Lite Individual": "Premium Lite"
+      },
       "status": "active"
     },
     {
@@ -255,6 +322,10 @@
       "enhanced_proxy_validation": false,
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,
+      "plan_name_map": {
+        "Starter / Free": "Starter (Free)",
+        "Starter": "Starter (Free)"
+      },
       "status": "active"
     },
     {
@@ -273,6 +344,9 @@
       "enhanced_proxy_validation": false,
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,
+      "plan_name_map": {
+        "Plus": "Pro"
+      },
       "status": "active"
     },
     {
@@ -291,6 +365,20 @@
       "enhanced_proxy_validation": false,
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,
+      "plan_name_map": {
+        "Monthly": "Monthly Membership",
+        "Abonnement mensuel": "Monthly Membership",
+        "Monatliche Mitgliedschaft": "Monthly Membership",
+        "Abbonamento mensile": "Monthly Membership",
+        "Suscripción mensual": "Monthly Membership",
+        "月額メンバーシップ (Monthly Membership)": "Monthly Membership",
+        "Annual": "Annual Membership",
+        "Abonnement annuel": "Annual Membership",
+        "Jährliche Mitgliedschaft": "Annual Membership",
+        "Abbonamento annuale": "Annual Membership",
+        "Suscripción anual": "Annual Membership",
+        "年間メンバーシップ (Annual Membership)": "Annual Membership"
+      },
       "status": "active"
     }
   ]
