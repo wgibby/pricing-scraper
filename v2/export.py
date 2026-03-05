@@ -97,6 +97,10 @@ def export_for_website(db_path: Path | None = None) -> dict:
     registry = load_registry()
     active_sites = {s["id"] for s in registry if s.get("status", "active") == "active"}
     name_maps = {s["id"]: s["plan_name_map"] for s in registry if s.get("plan_name_map")}
+    blocklists = {
+        s["id"]: [n.lower() for n in s["plan_name_blocklist"]]
+        for s in registry if s.get("plan_name_blocklist")
+    }
 
     conn = get_connection(db_path)
     try:
@@ -127,8 +131,12 @@ def export_for_website(db_path: Path | None = None) -> dict:
             plan_entries = []
 
             site_name_map = name_maps.get(r["site_id"], {})
+            site_blocklist = blocklists.get(r["site_id"], [])
 
             for plan in plans:
+                # Skip blocklisted plans (same filter as scrape-time postprocessing)
+                if plan["plan_name"].lower() in site_blocklist:
+                    continue
                 features = []
                 if plan["key_features"]:
                     try:

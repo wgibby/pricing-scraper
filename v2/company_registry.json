@@ -168,19 +168,26 @@
         "Audible Standard": "Standard",
         "Audible – Assinatura Mensal": "Standard",
         "スタンダードプラン (Standard Plan)": "Standard",
-        "Audible – Oferta por Tempo Limitado": "Standard (Limited Offer)",
         "Audible Premium": "Premium Plus",
         "Audible Premium Plus": "Premium Plus",
         "プレミアムプラン (Premium Plan)": "Premium Plus",
-        "Audible Premium Plus – 1 crédito al mes": "Premium Plus (1 credit/mo)",
+        "Premium Plus": "Premium Plus",
+        "Premium Plus (1 credit/mo)": "Premium Plus",
+        "Audible Premium Plus – 1 crédito al mes": "Premium Plus",
+        "12 credits": "Premium Plus",
+        "Audible Premium Plus Anual – 12 créditos": "Premium Plus",
+        "Premium Plus Annual (12 credits)": "Premium Plus",
+        "2 credits a month": "Premium Plus (2 credits/mo)",
         "Audible Premium Plus – 2 créditos al mes": "Premium Plus (2 credits/mo)",
-        "Audible Premium Plus Anual – 12 créditos": "Premium Plus Annual (12 credits)",
-        "Audible Premium Plus Anual – 24 créditos": "Premium Plus Annual (24 credits)",
-        "12 credits": "Premium Plus Annual (12 credits)",
-        "24 Credits": "Premium Plus Annual (24 credits)",
-        "2 credits a month": "Premium Plus (2 credits/mo)"
+        "Premium Plus (2 credits/mo)": "Premium Plus (2 credits/mo)",
+        "24 Credits": "Premium Plus (2 credits/mo)",
+        "Audible Premium Plus Anual – 24 créditos": "Premium Plus (2 credits/mo)",
+        "Premium Plus Annual (24 credits)": "Premium Plus (2 credits/mo)"
       },
-      "status": "active"
+      "status": "active",
+      "plan_name_blocklist": [
+        "Audible – Oferta por Tempo Limitado"
+      ]
     },
     {
       "id": "notion",
