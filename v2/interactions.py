@@ -708,39 +708,165 @@ def _adobe_geo_popup(page, country: str) -> bool:
 # Disney+ price wait interaction
 # ---------------------------------------------------------------------------
 
+_DISNEY_PRICE_RE = re.compile(r'[\$€£¥₹][\s]?\d+[.,]?\d*|R\$[\s]?\d+')
+
+# Commerce page fallback for when help page 404s
+_DISNEY_COMMERCE_URL = "https://www.disneyplus.com/en/commerce/plans"
+
+
 def _disney_wait_for_prices(page, country: str) -> bool:
     """
-    Wait for Disney+ async price loading.
+    Wait for Disney+ pricing page to fully render.
 
-    Disney+ loads prices asynchronously after initial page render.
-    Uses wait_for_selector with price-related selectors.
+    Handles two page types:
+    - Help page (US via country_urls): Salesforce LWR SPA, needs time to render
+    - Commerce page (all other countries): React app with async price loading
+
+    For both: detects errors/spinners, retries via reload, verifies price text.
+    If help page 404s, falls back to the commerce page.
 
     Args:
         page: Playwright page object.
         country: ISO alpha-2 country code.
 
     Returns:
-        True (always — we try our best but don't fail the whole scrape).
+        True (always — best-effort).
     """
-    price_selectors = [
-        '[class*="price"]',
-        '[data-testid*="price"]',
-        '[class*="Price"]',
-        '[class*="cost"]',
-    ]
+    is_help_page = "help.disneyplus.com" in page.url
 
-    for sel in price_selectors:
+    if is_help_page:
+        return _disney_wait_help_page(page, country)
+    else:
+        return _disney_wait_commerce_page(page, country)
+
+
+def _disney_wait_help_page(page, country: str) -> bool:
+    """Handle Disney+ help page (Salesforce LWR). Falls back to commerce on 404."""
+    # Wait for SPA to render
+    _log("Disney+ help: waiting for Salesforce LWR to render...")
+    page.wait_for_timeout(6000)
+
+    visible = _get_visible_text(page)
+
+    # Check for 404
+    if "can't find the page" in visible.lower() or len(visible) < 1000:
+        _log("Disney+ help: got 404, falling back to commerce page")
         try:
-            page.wait_for_selector(sel, timeout=10000)
-            _log(f"Disney+: price element found ({sel})")
-            page.wait_for_timeout(2000)  # Extra buffer for all prices to render
+            page.goto(_DISNEY_COMMERCE_URL, wait_until="networkidle", timeout=45000)
+            page.wait_for_timeout(5000)
+            return _disney_wait_commerce_page(page, country)
+        except Exception as e:
+            _log(f"Disney+ help: commerce fallback failed: {e}")
             return True
+
+    if _DISNEY_PRICE_RE.search(visible):
+        _log(f"Disney+ help: pricing content found ({len(visible)} chars)")
+        _disney_dismiss_cookies(page)
+        # Scroll to load all content
+        try:
+            page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(1000)
+            page.evaluate("() => window.scrollTo(0, 0)")
+        except Exception:
+            pass
+        return True
+
+    _log(f"Disney+ help: no pricing found ({len(visible)} chars), continuing")
+    return True
+
+
+def _disney_wait_commerce_page(page, country: str) -> bool:
+    """Handle Disney+ commerce/plans page with async price loading."""
+    max_reloads = 1
+
+    for attempt in range(max_reloads + 1):
+        if attempt > 0:
+            _log(f"Disney+: reload attempt {attempt}")
+            try:
+                page.reload(wait_until="networkidle", timeout=30000)
+            except Exception as e:
+                _log(f"Disney+: reload failed: {e}")
+                continue
+            page.wait_for_timeout(5000)
+
+        visible = _get_visible_text(page)
+
+        # Check for error page
+        if "unexpected error" in visible.lower():
+            _log("Disney+: detected error page")
+            if attempt < max_reloads:
+                continue
+            return True
+
+        # Wait for price elements via CSS selectors
+        price_found = False
+        for sel in [
+            '[class*="price"]', '[data-testid*="price"]',
+            '[class*="Price"]', '[class*="cost"]',
+        ]:
+            try:
+                page.wait_for_selector(sel, timeout=8000)
+                _log(f"Disney+: price element found ({sel})")
+                price_found = True
+                break
+            except Exception:
+                continue
+
+        if price_found:
+            page.wait_for_timeout(3000)
+
+        visible = _get_visible_text(page)
+        if _DISNEY_PRICE_RE.search(visible):
+            _log(f"Disney+: pricing text confirmed ({len(visible)} chars)")
+            _disney_dismiss_cookies(page)
+            return True
+
+        # Extra wait for slow proxy connections
+        _log("Disney+: no price text yet, extra wait...")
+        page.wait_for_timeout(5000)
+
+        visible = _get_visible_text(page)
+        if _DISNEY_PRICE_RE.search(visible):
+            _log(f"Disney+: pricing text confirmed after extra wait")
+            _disney_dismiss_cookies(page)
+            return True
+
+        _log(f"Disney+: still no price text ({len(visible)} chars)")
+
+    _log("Disney+: all attempts exhausted, continuing anyway")
+    return True
+
+
+def _get_visible_text(page) -> str:
+    """Safely get visible text from page."""
+    try:
+        return page.inner_text("body")
+    except Exception:
+        return ""
+
+
+def _disney_dismiss_cookies(page) -> None:
+    """Try to dismiss cookie consent on Disney+ pages."""
+    for selector in [
+        'button:has-text("Accept All")',
+        'button:has-text("Accept all")',
+        'button:has-text("Accepter tout")',
+        'button:has-text("Alle akzeptieren")',
+        'button:has-text("Accetta tutto")',
+        'button:has-text("Aceptar todo")',
+        'button:has-text("Aceitar tudo")',
+        'button:has-text("Alles accepteren")',
+        '#onetrust-accept-btn-handler',
+    ]:
+        try:
+            btn = page.locator(selector)
+            if btn.count() > 0:
+                btn.first.click(timeout=2000)
+                _log(f"Disney+: dismissed cookies ({selector})")
+                page.wait_for_timeout(500)
+                return
         except Exception:
             continue
-
-    _log("Disney+: no price selectors found, continuing with stabilization wait")
-    page.wait_for_timeout(5000)
-    return True
 
 
 # ---------------------------------------------------------------------------

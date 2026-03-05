@@ -70,6 +70,11 @@ def resolve_url(site_config: dict, country: str) -> str:
     Returns:
         Resolved URL string.
     """
+    # Check for per-country URL overrides first
+    country_urls = site_config.get("country_urls")
+    if country_urls and country.lower() in country_urls:
+        return country_urls[country.lower()]
+
     url = site_config["pricing_url"]
     strategy = site_config["geo_strategy"]
 
