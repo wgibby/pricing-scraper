@@ -141,6 +141,31 @@ def _postprocess_extraction(result_dict: dict, site_config: dict) -> dict:
         if plan.get("annual_price") is not None and ame is None:
             plan["annual_monthly_equivalent"] = round(plan["annual_price"] / 12, 2)
 
+    # Rescue prices mentioned in notes but missing from price fields.
+    # The LLM sometimes acknowledges a price in notes but fails to fill the field.
+    # Pattern: "$X/month shown for monthly billing" or similar in notes.
+    import re
+    _NOTES_MONTHLY_RE = re.compile(
+        r'[\£\$\€\¥\₹]?\s*([\d,]+(?:\.\d+)?)\s*/\s*(?:month|mo)\b'
+        r'(?!.*(?:billed annually|billed yearly|per year))',
+        re.IGNORECASE,
+    )
+    for plan in plans:
+        notes = plan.get("notes") or ""
+        if plan.get("monthly_price") is None and not plan.get("is_free_tier") and not plan.get("is_contact_sales"):
+            m = _NOTES_MONTHLY_RE.search(notes)
+            if m:
+                try:
+                    price = float(m.group(1).replace(",", ""))
+                    plan["monthly_price"] = price
+                    _log(
+                        f"Rescued monthly_price={price} from notes for {plan.get('plan_name', '?')}",
+                        site_config["id"],
+                        result_dict.get("country", ""),
+                    )
+                except ValueError:
+                    pass
+
     # Update plan_count in case blocklist removed some
     result_dict["plan_count"] = len(plans)
 

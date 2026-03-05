@@ -265,6 +265,8 @@ def run_interaction(page, site_config: dict, country: str) -> bool:
         return _disney_wait_for_prices(page, country)
     elif interaction_type == "zwift_region_popup":
         return _zwift_region_popup(page, country)
+    elif interaction_type == "canva_toggle_billing":
+        return _canva_toggle_billing(page, country)
     else:
         _log(f"Unknown interaction type: {interaction_type}")
         return True
@@ -792,6 +794,203 @@ def _zwift_region_popup(page, country: str) -> bool:
         pass
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# Canva billing toggle (capture both Monthly and Yearly prices)
+# ---------------------------------------------------------------------------
+
+# Multilingual keywords for the Monthly toggle (from archived handler)
+_CANVA_MONTHLY_KEYWORDS = [
+    "monthly", "month", "mensuel", "monatlich", "mensual", "mensal",
+    "mensile", "maandelijks", "月払い", "月額",
+]
+
+_CANVA_YEARLY_KEYWORDS = [
+    "yearly", "annual", "year", "annuel", "jährlich", "anual",
+    "annuale", "jaarlijks", "年払い", "年額",
+]
+
+
+def _canva_toggle_billing(page, country: str) -> bool:
+    """
+    Capture both Monthly and Yearly prices from Canva's pricing page.
+
+    Canva defaults to the Yearly tab. This interaction:
+    1. Reads yearly pricing text from the visible cards via JS
+    2. Clicks the Monthly toggle
+    3. Waits for the DOM to update with monthly prices
+    4. Injects the yearly prices as visible text so the LLM extractor sees both
+
+    Techniques ported from archive/site_handlers/canva.py:
+    - Multi-strategy toggle detection (CSS selectors, then JS keyword search)
+    - Multilingual keyword matching for button text
+    - Fallback: assume first option in a 2-option toggle is Monthly
+    """
+    _log("Canva: starting billing toggle interaction")
+
+    # Step 1: Read visible pricing text from the Yearly tab (default view)
+    yearly_text = _canva_read_visible_prices(page)
+    if yearly_text:
+        _log(f"Canva: captured yearly pricing text ({len(yearly_text)} chars)")
+    else:
+        _log("Canva: could not read yearly pricing text")
+
+    # Step 2: Click the Monthly toggle
+    toggled = _canva_click_monthly(page)
+    if toggled:
+        # Wait for prices to update (React/DOM re-render)
+        page.wait_for_timeout(2500)
+        _log("Canva: toggled to Monthly tab")
+    else:
+        _log("Canva: could not find Monthly toggle, continuing with default view")
+
+    # Step 3: Inject yearly pricing text at the TOP of the DOM.
+    # The page now shows monthly prices natively. The injected yearly text
+    # ensures the LLM sees both billing periods. Inserting at the top
+    # guarantees the HTML cleaner preserves it (it truncates from the bottom).
+    if yearly_text and toggled:
+        _canva_inject_text_at_top(page, yearly_text, "Annual/Yearly Billing Prices")
+
+    return True
+
+
+def _canva_read_visible_prices(page) -> str:
+    """
+    Read visible pricing text from Canva's pricing cards.
+
+    Uses innerText on the pricing card section to get a clean representation
+    of plan names, prices, and descriptions as they appear to a user.
+    """
+    try:
+        text = page.evaluate("""() => {
+            // Try to find the pricing cards section specifically
+            // Canva wraps pricing cards in a section before "Compare features"
+            const sections = document.querySelectorAll('section, [role="main"], main');
+            for (const sec of sections) {
+                const t = sec.innerText || '';
+                // A pricing section should have plan names AND currency symbols
+                if (t.includes('Pro') && t.includes('Business') && /[£$€¥₹]/.test(t)) {
+                    // Trim to just the pricing cards area (before FAQ/footer)
+                    const cutoff = t.indexOf('Compare features');
+                    return cutoff > 0 ? t.substring(0, cutoff).trim() : t.substring(0, 3000).trim();
+                }
+            }
+            // Fallback: use body text, trimmed
+            const body = document.body.innerText || '';
+            const cutoff = body.indexOf('Compare features');
+            return cutoff > 0 ? body.substring(0, cutoff).trim() : body.substring(0, 3000).trim();
+        }""")
+        return text.strip() if text else ""
+    except Exception as e:
+        _log(f"Canva: error reading visible prices: {e}")
+        return ""
+
+
+def _canva_click_monthly(page) -> bool:
+    """
+    Click the Monthly toggle on Canva's pricing page.
+
+    Canva uses a <button role="switch" aria-checked="true"> for the billing
+    toggle. When aria-checked="true", Yearly is selected. Clicking the switch
+    toggles to Monthly (aria-checked="false").
+
+    The "Monthly" text is a <p> label next to the switch — clicking it does
+    nothing. We must click the actual <button role="switch">.
+    """
+    # Strategy 1: Find the billing switch button directly
+    # It's a role="switch" near "Monthly"/"Yearly" text
+    try:
+        handle = page.evaluate_handle("""() => {
+            // Find all switch buttons
+            const switches = document.querySelectorAll('button[role="switch"]');
+            for (const sw of switches) {
+                // Check if this switch is near billing-related text
+                const parent = sw.closest('div');
+                if (!parent) continue;
+                const context = parent.textContent.toLowerCase();
+                if (context.includes('monthly') || context.includes('yearly') ||
+                    context.includes('annual')) {
+                    return sw;
+                }
+            }
+            // Broader: any switch with aria-checked="true" near pricing area
+            for (const sw of switches) {
+                if (sw.getAttribute('aria-checked') === 'true') {
+                    return sw;
+                }
+            }
+            return null;
+        }""")
+        el = handle.as_element()
+        if el:
+            el.click()
+            _log("Canva: clicked billing switch (role=switch)")
+            return True
+    except Exception as e:
+        _log(f"Canva: switch button click failed: {e}")
+
+    # Strategy 2: Playwright locator for the switch
+    try:
+        locator = page.locator('button[role="switch"]').first
+        if locator.count() > 0 and locator.is_visible():
+            locator.click()
+            _log("Canva: clicked switch via Playwright locator")
+            return True
+    except Exception:
+        pass
+
+    # Strategy 3: Fallback — multilingual keyword search for clickable elements
+    monthly_kw_js = ", ".join(f'"{kw}"' for kw in _CANVA_MONTHLY_KEYWORDS)
+
+    try:
+        handle = page.evaluate_handle(f"""() => {{
+            const monthlyKeywords = [{monthly_kw_js}];
+            const candidates = document.querySelectorAll(
+                'button, [role="tab"], [role="radio"], [role="switch"], label'
+            );
+            for (const el of candidates) {{
+                const text = (el.textContent || '').toLowerCase().trim();
+                if (!text || text.length > 30) continue;
+                if (monthlyKeywords.some(kw => text.includes(kw))) {{
+                    return el;
+                }}
+            }}
+            return null;
+        }}""")
+        el = handle.as_element()
+        if el:
+            el.click()
+            _log("Canva: clicked Monthly via keyword fallback")
+            return True
+    except Exception as e:
+        _log(f"Canva: keyword fallback failed: {e}")
+
+    return False
+
+
+def _canva_inject_text_at_top(page, text: str, label: str) -> None:
+    """
+    Inject pricing text at the TOP of the DOM.
+
+    Inserting at the top ensures the HTML cleaner preserves it during
+    truncation (which cuts from the bottom). The text is wrapped in a
+    clearly labeled container so the LLM understands the context.
+    """
+    try:
+        page.evaluate("""(data) => {
+            const div = document.createElement('div');
+            div.id = 'canva-billing-reference';
+            div.style.cssText = 'padding: 16px; margin: 16px; border: 2px solid #7c3aed; background: #faf5ff;';
+            div.innerHTML = '<h3>' + data.label + '</h3><pre style="white-space:pre-wrap">' +
+                data.text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+
+            const main = document.querySelector('main') || document.body;
+            main.insertBefore(div, main.firstChild);
+        }""", {"text": text, "label": label})
+        _log("Canva: injected structured price summary into DOM")
+    except Exception as e:
+        _log(f"Canva: failed to inject price summary: {e}")
 
 
 # ---------------------------------------------------------------------------
