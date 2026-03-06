@@ -122,7 +122,7 @@ def export_for_website(db_path: Path | None = None) -> dict:
 
             # Get plans for this result
             plans = conn.execute(
-                "SELECT plan_name, monthly_price, annual_price, "
+                "SELECT plan_name, monthly_price, annual_price, annual_monthly_equivalent, "
                 "       is_free_tier, is_contact_sales, key_features, notes "
                 "FROM plans WHERE result_id = ?",
                 (r["result_id"],),
@@ -153,6 +153,12 @@ def export_for_website(db_path: Path | None = None) -> dict:
                 if canonical_name != raw_name:
                     normalized_count += 1
 
+                # Compute effective annual price: use annual_price if available,
+                # otherwise derive from annual_monthly_equivalent * 12
+                annual_price = plan["annual_price"]
+                if annual_price is None and plan["annual_monthly_equivalent"] is not None:
+                    annual_price = round(plan["annual_monthly_equivalent"] * 12, 2)
+
                 # Monthly entry
                 if plan["monthly_price"] is not None or is_free or is_sales:
                     plan_entries.append(_make_plan_entry(
@@ -167,12 +173,12 @@ def export_for_website(db_path: Path | None = None) -> dict:
                         is_contact_sales=is_sales,
                     ))
 
-                # Yearly entry (only if annual price exists)
-                if plan["annual_price"] is not None:
+                # Yearly entry (use annual_price or derived from annual_monthly_equivalent)
+                if annual_price is not None:
                     plan_entries.append(_make_plan_entry(
                         plan_name=canonical_name,
                         original_name=raw_name,
-                        price=plan["annual_price"],
+                        price=annual_price,
                         duration="yearly",
                         currency_symbol=currency_symbol,
                         features=features,

@@ -552,8 +552,8 @@
         "nl",
         "au"
       ],
-      "requires_interaction": false,
-      "interaction_type": null,
+      "requires_interaction": true,
+      "interaction_type": "figma_toggle_billing",
       "enhanced_proxy_validation": false,
       "stealth_profile": "chromium_standard",
       "skip_init_script": false,

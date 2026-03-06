@@ -267,6 +267,8 @@ def run_interaction(page, site_config: dict, country: str) -> bool:
         return _zwift_region_popup(page, country)
     elif interaction_type == "canva_toggle_billing":
         return _canva_toggle_billing(page, country)
+    elif interaction_type == "figma_toggle_billing":
+        return _figma_toggle_billing(page, country)
     else:
         _log(f"Unknown interaction type: {interaction_type}")
         return True
@@ -1117,6 +1119,166 @@ def _canva_inject_text_at_top(page, text: str, label: str) -> None:
         _log("Canva: injected structured price summary into DOM")
     except Exception as e:
         _log(f"Canva: failed to inject price summary: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Figma billing toggle (capture both Annual and Monthly prices)
+# ---------------------------------------------------------------------------
+
+
+def _figma_toggle_billing(page, country: str) -> bool:
+    """
+    Capture both Annual and Monthly prices from Figma's pricing page.
+
+    Figma defaults to the Annual view (toggle aria-checked="true").
+    Only Professional plan prices change with the toggle — Organization
+    and Enterprise are always "billed annually".
+
+    This interaction:
+    1. Reads annual pricing text from the visible cards
+    2. Clicks the billing toggle to switch to Monthly
+    3. Waits for the DOM to update with monthly prices
+    4. Injects the annual prices as visible text so the LLM sees both
+    """
+    _log("Figma: starting billing toggle interaction")
+
+    # Step 1: Read visible pricing text from the Annual view (default)
+    annual_text = _figma_read_visible_prices(page)
+    if annual_text:
+        _log(f"Figma: captured annual pricing text ({len(annual_text)} chars)")
+    else:
+        _log("Figma: could not read annual pricing text")
+
+    # Step 2: Click the toggle to switch to Monthly
+    toggled = _figma_click_monthly(page)
+    if toggled:
+        page.wait_for_timeout(2500)
+        _log("Figma: toggled to Monthly view")
+    else:
+        _log("Figma: could not find billing toggle, continuing with default view")
+
+    # Step 3: Inject annual pricing text at the top of the DOM.
+    # The page now shows monthly prices natively. The injected annual text
+    # ensures the LLM sees both billing periods.
+    if annual_text and toggled:
+        _figma_inject_text_at_top(page, annual_text, "Annual Billing Prices (billed yearly)")
+
+    return True
+
+
+def _figma_read_visible_prices(page) -> str:
+    """
+    Read visible pricing text from Figma's pricing cards in the current view.
+
+    Looks for sections containing plan names and currency symbols, trimmed
+    to just the pricing area (before "Compare all features" or footer).
+    """
+    try:
+        text = page.evaluate("""() => {
+            // Try to find the pricing section specifically
+            const sections = document.querySelectorAll('section, [role="main"], main');
+            for (const sec of sections) {
+                const t = sec.innerText || '';
+                // Figma pricing section has Professional/Organization/Enterprise + currency
+                if (t.includes('Professional') && t.includes('Organization') && /[£$€¥₹]/.test(t)) {
+                    // Trim before the feature comparison table
+                    const cutoff = t.indexOf('Compare all features');
+                    if (cutoff > 0) return t.substring(0, cutoff).trim();
+                    const cutoff2 = t.indexOf('Compare features');
+                    if (cutoff2 > 0) return t.substring(0, cutoff2).trim();
+                    return t.substring(0, 4000).trim();
+                }
+            }
+            // Fallback: body text trimmed
+            const body = document.body.innerText || '';
+            const cutoff = body.indexOf('Compare all features');
+            return cutoff > 0 ? body.substring(0, cutoff).trim() : body.substring(0, 4000).trim();
+        }""")
+        return text.strip() if text else ""
+    except Exception as e:
+        _log(f"Figma: error reading visible prices: {e}")
+        return ""
+
+
+def _figma_click_monthly(page) -> bool:
+    """
+    Click the billing toggle on Figma's pricing page to switch to Monthly.
+
+    Figma has two role="switch" buttons — the billing toggle has
+    aria-label containing "billing". When aria-checked="true", Annual
+    is selected. Clicking toggles to Monthly (aria-checked="false").
+    """
+    # Strategy 1: Find the billing-specific switch
+    try:
+        handle = page.evaluate_handle("""() => {
+            const switches = document.querySelectorAll('button[role="switch"]');
+            for (const sw of switches) {
+                const label = (sw.getAttribute('aria-label') || '').toLowerCase();
+                if (label.includes('billing') || label.includes('annual') || label.includes('monthly')) {
+                    return sw;
+                }
+            }
+            return null;
+        }""")
+        el = handle.as_element()
+        if el:
+            el.click()
+            _log("Figma: clicked billing switch (aria-label match)")
+            return True
+    except Exception as e:
+        _log(f"Figma: billing switch click failed: {e}")
+
+    # Strategy 2: Playwright locator with aria-label filter
+    try:
+        locator = page.locator('button[role="switch"][aria-label*="billing"]').first
+        if locator.count() > 0 and locator.is_visible():
+            locator.click()
+            _log("Figma: clicked billing switch via locator")
+            return True
+    except Exception:
+        pass
+
+    # Strategy 3: Any switch near pricing-related text
+    try:
+        handle = page.evaluate_handle("""() => {
+            const switches = document.querySelectorAll('button[role="switch"]');
+            for (const sw of switches) {
+                const parent = sw.parentElement;
+                if (!parent) continue;
+                const ctx = parent.textContent.toLowerCase();
+                if (ctx.includes('monthly') || ctx.includes('annual') || ctx.includes('yearly')) {
+                    return sw;
+                }
+            }
+            return null;
+        }""")
+        el = handle.as_element()
+        if el:
+            el.click()
+            _log("Figma: clicked switch via context text fallback")
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _figma_inject_text_at_top(page, text: str, label: str) -> None:
+    """Inject annual pricing text at the top of the DOM for LLM extraction."""
+    try:
+        page.evaluate("""(data) => {
+            const div = document.createElement('div');
+            div.id = 'figma-annual-billing-reference';
+            div.style.cssText = 'padding: 16px; margin: 16px; border: 2px solid #7c3aed; background: #faf5ff;';
+            div.innerHTML = '<h3>' + data.label + '</h3><pre style="white-space:pre-wrap">' +
+                data.text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+
+            const main = document.querySelector('main') || document.body;
+            main.insertBefore(div, main.firstChild);
+        }""", {"text": text, "label": label})
+        _log("Figma: injected annual price summary into DOM")
+    except Exception as e:
+        _log(f"Figma: failed to inject annual price summary: {e}")
 
 
 # ---------------------------------------------------------------------------
