@@ -561,6 +561,10 @@
         "Starter / Free": "Starter (Free)",
         "Starter": "Starter (Free)"
       },
+      "plan_name_blocklist": [
+        "Organization – Dev seat",
+        "Organization – Full seat"
+      ],
       "status": "active"
     },
     {
