@@ -565,6 +565,7 @@
         "Starter": "Starter (Free)"
       },
       "plan_name_blocklist": [
+        "Organization – Collab seat",
         "Organization – Dev seat",
         "Organization – Full seat"
       ],
