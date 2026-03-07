@@ -493,6 +493,9 @@
         "Premium Two-person": "Premium Duo",
         "Premium Lite Individual": "Premium Lite"
       },
+      "plan_name_blocklist": [
+        "Premium Lite Individual"
+      ],
       "status": "active"
     },
     {
